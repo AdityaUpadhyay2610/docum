@@ -25,7 +25,10 @@ const CALLOUT_TYPES = new Set(['info', 'warning', 'success', 'error', 'tip']);
 export const normalizeEmail = (email) =>
   typeof email === 'string' ? email.trim().toLowerCase() : '';
 
-export const validateAuthInput = ({ name, email, password }, { requireName = false } = {}) => {
+export const validateAuthInput = (
+  { name, email, password, confirmPassword },
+  { requireName = false, requireConfirm = false } = {}
+) => {
   const errors = {};
   const normalizedEmail = normalizeEmail(email);
 
@@ -41,12 +44,28 @@ export const validateAuthInput = ({ name, email, password }, { requireName = fal
   if (!normalizedEmail || normalizedEmail.length > 254 || !EMAIL_PATTERN.test(normalizedEmail)) {
     errors.email = 'Please provide a valid email address';
   }
-  if (typeof password !== 'string' || password.length < 6 || password.length > 128) {
-    errors.password = 'Password must be between 6 and 128 characters';
+  if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
+    errors.password = 'Password must be between 8 and 128 characters';
+  } else {
+    // Increased security: must contain uppercase, lowercase, and at least one number
+    const hasUpper = /[A-Z]/.test(password);
+    const hasLower = /[a-z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    if (!hasUpper || !hasLower || !hasNumber) {
+      errors.password = 'Password must contain uppercase letters, lowercase letters, and at least one number';
+    }
   }
   // Warn on common weak passwords
   if (!errors.password && /^(.)\1+$/.test(password)) {
     errors.password = 'Password cannot be all the same character';
+  }
+
+  if (requireConfirm) {
+    if (!confirmPassword) {
+      errors.confirmPassword = 'Confirm password is required';
+    } else if (password !== confirmPassword) {
+      errors.confirmPassword = 'Passwords do not match';
+    }
   }
 
   return { errors, normalizedEmail };

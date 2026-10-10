@@ -6,13 +6,14 @@
  */
 
 import api, { API_BASE_URL, setAccessToken, clearAuthTokens } from './api';
+import config from '../config';
 
 // Build the shared headers without importing the full request() closure
 function sharedHeaders() {
   return {
     'Content-Type': 'application/json',
-    ...(import.meta.env.VITE_APP_REQUEST_TOKEN
-      ? { 'X-App-Request': import.meta.env.VITE_APP_REQUEST_TOKEN }
+    ...(config.appRequestToken
+      ? { 'X-App-Request': config.appRequestToken }
       : {}),
   };
 }
@@ -36,6 +37,19 @@ export const authServices = {
    */
   async login(credentials) {
     const res = await api.post('/auth/login', credentials);
+    if (res.accessToken) {
+      setAccessToken(res.accessToken);
+      if (res.user) localStorage.setItem('user', JSON.stringify(res.user));
+      localStorage.removeItem('isGuest');
+    }
+    return res;
+  },
+
+  /**
+   * Continue with Google (verifies Google credential + secures account with app password)
+   */
+  async googleAuth(data) {
+    const res = await api.post('/auth/google', data);
     if (res.accessToken) {
       setAccessToken(res.accessToken);
       if (res.user) localStorage.setItem('user', JSON.stringify(res.user));

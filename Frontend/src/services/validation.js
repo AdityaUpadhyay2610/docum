@@ -11,10 +11,29 @@ const FONT_SIZES = new Set([
   '8px', '9px', '10px', '11px', '12px', '14px', '16px', '18px', '20px', '24px', '28px', '32px', '36px', '48px', '72px'
 ]);
 
-export function validateAuthData({ name, email, password }, { requireName = false } = {}) {
-  if (requireName && (!name || name.trim().length < 2 || name.trim().length > 80)) return 'Name must be between 2 and 80 characters';
-  if (!email || email.trim().length > 254 || !EMAIL_PATTERN.test(email.trim())) return 'Please provide a valid email address';
-  if (!password || password.length < 6 || password.length > 128) return 'Password must be between 6 and 128 characters';
+export function validateAuthData(
+  { name, email, password, confirmPassword },
+  { requireName = false, requireConfirm = false } = {}
+) {
+  if (requireName && (!name || name.trim().length < 2 || name.trim().length > 80)) {
+    return 'Name must be between 2 and 80 characters';
+  }
+  if (!email || email.trim().length > 254 || !EMAIL_PATTERN.test(email.trim())) {
+    return 'Please provide a valid email address';
+  }
+  if (!password || password.length < 8 || password.length > 128) {
+    return 'Password must be between 8 and 128 characters';
+  }
+  const hasUpper = /[A-Z]/.test(password);
+  const hasLower = /[a-z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  if (!hasUpper || !hasLower || !hasNumber) {
+    return 'Password must contain uppercase letters, lowercase letters, and at least one number';
+  }
+  if (requireConfirm) {
+    if (!confirmPassword) return 'Please confirm your password';
+    if (password !== confirmPassword) return 'Passwords do not match';
+  }
   return null;
 }
 

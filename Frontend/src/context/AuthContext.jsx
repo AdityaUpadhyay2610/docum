@@ -155,6 +155,16 @@ export function AuthProvider({ children }) {
     return res;
   }, []);
 
+  const googleAuth = useCallback(async (data) => {
+    const res = await authServices.googleAuth(data);
+    if (res?.user) {
+      setUser(res.user);
+      setIsGuest(false);
+      setIsRegisterModalOpen(false);
+    }
+    return res;
+  }, []);
+
   const continueAsGuest = useCallback(() => {
     clearAuthTokens();
     setUser(null);
@@ -191,6 +201,7 @@ export function AuthProvider({ children }) {
     loading,
     login,
     register,
+    googleAuth,
     continueAsGuest,
     logout,
     isRegisterModalOpen,

@@ -54,6 +54,9 @@ const config = {
   // Must match APP_REQUEST_TOKEN in the backend .env (production only).
   appRequestToken: optional('VITE_APP_REQUEST_TOKEN', ''),
 
+  // ── Google OAuth ─────────────────────────────────────────────────────────────
+  googleClientId: optional('VITE_GOOGLE_CLIENT_ID', ''),
+
   // ── Environment ───────────────────────────────────────────────────────────────
   mode: import.meta.env.MODE ?? 'development',
   get isProd() {

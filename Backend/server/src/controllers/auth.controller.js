@@ -40,19 +40,42 @@ const generateRefreshToken = (user) => {
   );
 };
 
+// Helper to verify Google ID token via Google OAuth tokeninfo endpoint
+const verifyGoogleToken = async (credential) => {
+  try {
+    const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
+    if (!res.ok) {
+      throw new Error('Invalid or expired Google authentication token');
+    }
+    const payload = await res.json();
+    if (!payload.email || !payload.email_verified) {
+      throw new Error('Google account email is not verified');
+    }
+    return payload;
+  } catch (err) {
+    throw new Error(err.message || 'Failed to verify Google token');
+  }
+};
+
 // POST /api/auth/register
 export const register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, confirmPassword } = req.body;
 
-    const { errors, normalizedEmail } = validateAuthInput({ name, email, password }, { requireName: true });
-    if (Object.keys(errors).length > 0) return res.status(400).json({ error: 'Please correct the highlighted fields', fields: errors });
+    const { errors, normalizedEmail } = validateAuthInput(
+      { name, email, password, confirmPassword },
+      { requireName: true, requireConfirm: true }
+    );
+    if (Object.keys(errors).length > 0) {
+      return res.status(400).json({ error: 'Please correct the highlighted fields', fields: errors });
+    }
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       return res.status(400).json({ error: 'An account with this email already exists' });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // High security: 12 salt rounds
+    const hashedPassword = await bcrypt.hash(password, 12);
 
     const user = new User({
       name: name.trim(),
@@ -75,6 +98,7 @@ export const register = async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        avatar: user.avatar,
       },
       accessToken,
     });
@@ -83,6 +107,94 @@ export const register = async (req, res) => {
     if (error.code === 11000) return res.status(409).json({ error: 'An account with this email already exists' });
     if (error.name === 'ValidationError') return res.status(400).json({ error: error.message });
     return res.status(500).json({ error: 'Failed to register account' });
+  }
+};
+
+// POST /api/auth/google (Continue with Google + Password Security)
+export const googleAuth = async (req, res) => {
+  try {
+    const { credential, password, confirmPassword } = req.body;
+
+    if (!credential) {
+      return res.status(400).json({ error: 'Google authentication credential is required' });
+    }
+    if (!password) {
+      return res.status(400).json({ error: 'Password is required to secure your account' });
+    }
+
+    // Verify Google ID token
+    const googleUser = await verifyGoogleToken(credential);
+    const googleEmail = googleUser.email.trim().toLowerCase();
+    const googleName = googleUser.name || googleEmail.split('@')[0];
+    const googleSub = googleUser.sub;
+    const googlePicture = googleUser.picture || null;
+
+    let user = await User.findOne({ email: googleEmail });
+
+    if (user) {
+      // Existing account: verify app password
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        if (req._tokenBucket) penaliseFailedLogin(req._tokenBucket.ip, googleEmail);
+        return res.status(401).json({
+          error: 'Incorrect password for this account. Please enter your valid app password.',
+          isExistingUser: true,
+        });
+      }
+
+      // Link googleId if missing
+      if (!user.googleId) {
+        user.googleId = googleSub;
+        if (!user.avatar && googlePicture) user.avatar = googlePicture;
+        await user.save();
+      }
+
+      if (req._tokenBucket) clearLoginBuckets(req._tokenBucket.ip, googleEmail);
+    } else {
+      // New user registering with Google: validate password strength and confirm match
+      const { errors } = validateAuthInput(
+        { name: googleName, email: googleEmail, password, confirmPassword },
+        { requireName: false, requireConfirm: true }
+      );
+      if (Object.keys(errors).length > 0) {
+        return res.status(400).json({ error: 'Please correct the highlighted fields', fields: errors });
+      }
+
+      // Hash password with 12 salt rounds
+      const hashedPassword = await bcrypt.hash(password, 12);
+
+      user = new User({
+        name: googleName,
+        email: googleEmail,
+        password: hashedPassword,
+        googleId: googleSub,
+        avatar: googlePicture,
+        authProvider: 'google',
+      });
+      await user.save();
+    }
+
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+
+    user.refreshToken = refreshToken;
+    await user.save();
+
+    res.cookie('refreshToken', refreshToken, COOKIE_OPTIONS);
+
+    return res.status(200).json({
+      message: 'Google authentication successful',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar,
+      },
+      accessToken,
+    });
+  } catch (error) {
+    console.error('Google auth error:', error);
+    return res.status(500).json({ error: error.message || 'Google authentication failed' });
   }
 };
 

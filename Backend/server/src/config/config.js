@@ -72,6 +72,10 @@ const config = {
   // The frontend sends this in the X-App-Request header on every request.
   // Must match VITE_APP_REQUEST_TOKEN in the frontend .env.
   appRequestToken: optional('APP_REQUEST_TOKEN', ''),
+
+  // ── Google OAuth ─────────────────────────────────────────────────────────────
+  googleClientId: optional('GOOGLE_CLIENT_ID', ''),
+  googleClientSecret: optional('GOOGLE_CLIENT_SECRET', ''),
 };
 
 export default config;

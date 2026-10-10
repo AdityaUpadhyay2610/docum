@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import {
+  BookOpen,
   Search,
   RotateCcw,
   RotateCw,
@@ -197,14 +198,14 @@ export default function GoogleDocsToolbar({
       <div className="px-3 sm:px-6 pt-3.5 pb-1.5 flex flex-col md:flex-row md:items-center justify-between gap-2 overflow-visible">
         {/* Left: App Icon, Document Title & Menus */}
         <div className="flex items-start gap-3.5 min-w-0 overflow-visible">
-          {/* Google Docs Icon / Sidebar Toggle */}
+          {/* Document Workshops Logo / Sidebar Toggle */}
           <button
             type="button"
             onClick={() => onToggleSidebar?.()}
-            className="w-10 h-10 rounded-xl  text-black flex items-center justify-center shadow-xs cursor-pointer  active:scale-95 transition-all shrink-0"
+            className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 flex items-center justify-center shadow-sm cursor-pointer active:scale-95 transition-all shrink-0 mt-0.5"
             title="Toggle Document Explorer Sidebar"
           >
-            <BookOpen className="w-5 h-5 text-black" />
+            <BookOpen className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-white" />
           </button>
 
           {/* Title and Top Menus Container */}
