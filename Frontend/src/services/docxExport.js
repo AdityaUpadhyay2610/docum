@@ -1,22 +1,25 @@
-import {
-  Document,
-  Packer,
-  Paragraph,
-  TextRun,
-  HeadingLevel,
-  Table,
-  TableRow,
-  TableCell,
-  WidthType,
-  ShadingType,
-} from 'docx';
-
 /**
- * Generates and downloads a .docx file on the user's device
+ * Generates and downloads a .docx file on the user's device with rich Word formatting.
+ * Dynamically imports docx library to optimize initial bundle size.
  * @param {string} title - Title of the document
  * @param {Array} content - List of block objects
  */
 export async function exportToDocx(title = 'Untitled', content = []) {
+  const {
+    Document,
+    Packer,
+    Paragraph,
+    TextRun,
+    HeadingLevel,
+    Table,
+    TableRow,
+    TableCell,
+    WidthType,
+    ShadingType,
+    AlignmentType,
+    PageBreak,
+  } = await import('docx');
+
   const children = [];
 
   // Document Title Header
@@ -37,33 +40,104 @@ export async function exportToDocx(title = 'Untitled', content = []) {
       numberedCounter = 0;
     }
 
+    const s = block.style || {};
+    const fontName = s.fontFamily ? s.fontFamily.split(',')[0].replace(/['"]/g, '') : undefined;
+    const fontSizePt = s.fontSize ? parseInt(s.fontSize, 10) * 2 : 24; // docx uses half-points (24 = 12pt)
+    const colorHex = s.color ? s.color.replace('#', '') : undefined;
+
+    const alignment =
+      s.textAlign === 'center'
+        ? AlignmentType.CENTER
+        : s.textAlign === 'right'
+        ? AlignmentType.RIGHT
+        : s.textAlign === 'justify'
+        ? AlignmentType.JUSTIFIED
+        : AlignmentType.LEFT;
+
     // 1. Headings
     if (block.type === 'h1' || block.type === 'heading') {
       children.push(
         new Paragraph({
-          text: block.text || '',
+          children: [
+            new TextRun({
+              text: block.text || '',
+              bold: true,
+              size: 32, // 16pt
+              font: fontName,
+              color: colorHex || '1E293B',
+            }),
+          ],
           heading: HeadingLevel.HEADING_1,
+          alignment,
           spacing: { before: 240, after: 120 },
         })
       );
     } else if (block.type === 'h2') {
       children.push(
         new Paragraph({
-          text: block.text || '',
+          children: [
+            new TextRun({
+              text: block.text || '',
+              bold: true,
+              size: 28, // 14pt
+              font: fontName,
+              color: colorHex || '334155',
+            }),
+          ],
           heading: HeadingLevel.HEADING_2,
+          alignment,
           spacing: { before: 200, after: 100 },
         })
       );
     } else if (block.type === 'h3') {
       children.push(
         new Paragraph({
-          text: block.text || '',
+          children: [
+            new TextRun({
+              text: block.text || '',
+              bold: true,
+              size: 24, // 12pt
+              font: fontName,
+              color: colorHex || '475569',
+            }),
+          ],
           heading: HeadingLevel.HEADING_3,
+          alignment,
           spacing: { before: 160, after: 80 },
         })
       );
     }
-    // 2. To-do Item
+    // 2. Callout / Alert Note
+    else if (block.type === 'callout') {
+      const calloutType = block.calloutType || 'info';
+      const fillHex =
+        calloutType === 'warning' ? 'FEF3C7' :
+        calloutType === 'tip' ? 'D1FAE5' :
+        calloutType === 'success' ? 'EDE9FE' : 'E0F2FE';
+
+      children.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: `💡 [${calloutType.toUpperCase()}]: ${block.text || ''}`,
+              size: 22,
+              font: fontName,
+              color: '1E293B',
+            }),
+          ],
+          shading: {
+            type: ShadingType.CLEAR,
+            fill: fillHex,
+          },
+          border: {
+            left: { color: '3B82F6', size: 12, space: 4, value: 'single' },
+          },
+          spacing: { before: 140, after: 140 },
+          indent: { left: 240, right: 240 },
+        })
+      );
+    }
+    // 3. To-do Item
     else if (block.type === 'todo') {
       children.push(
         new Paragraph({
@@ -76,38 +150,65 @@ export async function exportToDocx(title = 'Untitled', content = []) {
             }),
             new TextRun({
               text: block.text || '',
-              strike: Boolean(block.checked),
-              color: block.checked ? '9CA3AF' : '1F2937',
-              size: 22,
+              strike: Boolean(block.checked || s.strikethrough),
+              bold: Boolean(s.bold),
+              italics: Boolean(s.italic),
+              underline: s.underline ? {} : undefined,
+              color: block.checked ? '9CA3AF' : colorHex || '1F2937',
+              font: fontName,
+              size: fontSizePt || 22,
             }),
           ],
+          alignment,
           spacing: { after: 80 },
         })
       );
     }
-    // 3. Bullet List
+    // 4. Bullet List
     else if (block.type === 'bullet') {
       children.push(
         new Paragraph({
-          text: block.text || '',
+          children: [
+            new TextRun({
+              text: block.text || '',
+              bold: Boolean(s.bold),
+              italics: Boolean(s.italic),
+              underline: s.underline ? {} : undefined,
+              strike: Boolean(s.strikethrough),
+              color: colorHex,
+              font: fontName,
+              size: fontSizePt || 22,
+            }),
+          ],
           bullet: { level: 0 },
+          alignment,
           spacing: { after: 80 },
         })
       );
     }
-    // 4. Numbered List
+    // 5. Numbered List
     else if (block.type === 'numbered') {
       children.push(
         new Paragraph({
           children: [
             new TextRun({ text: `${numberedCounter}. `, bold: true }),
-            new TextRun({ text: block.text || '' }),
+            new TextRun({
+              text: block.text || '',
+              bold: Boolean(s.bold),
+              italics: Boolean(s.italic),
+              underline: s.underline ? {} : undefined,
+              strike: Boolean(s.strikethrough),
+              color: colorHex,
+              font: fontName,
+              size: fontSizePt || 22,
+            }),
           ],
+          alignment,
           spacing: { after: 80 },
         })
       );
     }
-    // 5. Quote
+    // 6. Quote
     else if (block.type === 'quote') {
       children.push(
         new Paragraph({
@@ -115,15 +216,20 @@ export async function exportToDocx(title = 'Untitled', content = []) {
             new TextRun({
               text: block.text || '',
               italics: true,
-              color: '4B5563',
+              color: colorHex || '4B5563',
+              font: fontName,
+              size: fontSizePt || 22,
             }),
           ],
+          border: {
+            left: { color: '3B82F6', size: 12, space: 4, value: 'single' },
+          },
           indent: { left: 720 },
           spacing: { before: 120, after: 120 },
         })
       );
     }
-    // 6. Code Block
+    // 7. Code Block
     else if (block.type === 'code') {
       const codeLines = (block.text || '').split('\n');
       const textRuns = [];
@@ -152,7 +258,7 @@ export async function exportToDocx(title = 'Untitled', content = []) {
         })
       );
     }
-    // 7. Divider
+    // 8. Divider
     else if (block.type === 'divider') {
       children.push(
         new Paragraph({
@@ -168,7 +274,7 @@ export async function exportToDocx(title = 'Untitled', content = []) {
         })
       );
     }
-    // 8. Table Block
+    // 9. Table Block
     else if (block.type === 'table') {
       const headers = block.headers || ['Name', 'Tag', 'Notes'];
       const rows = block.rows || [];
@@ -213,7 +319,7 @@ export async function exportToDocx(title = 'Untitled', content = []) {
       );
       children.push(new Paragraph({ text: '', spacing: { after: 140 } }));
     }
-    // 9. Board View Block
+    // 10. Board View Block
     else if (block.type === 'board') {
       const columns = block.columns || [];
       children.push(
@@ -244,12 +350,32 @@ export async function exportToDocx(title = 'Untitled', content = []) {
       });
       children.push(new Paragraph({ text: '', spacing: { after: 140 } }));
     }
-    // 10. Default: Paragraph
+    // 11. Page Break
+    else if (block.type === 'page-break') {
+      children.push(
+        new Paragraph({
+          children: [new PageBreak()],
+        })
+      );
+    }
+    // 12. Default: Paragraph
     else {
       if (block.text && block.text.trim() !== '') {
         children.push(
           new Paragraph({
-            text: block.text,
+            children: [
+              new TextRun({
+                text: block.text,
+                bold: Boolean(s.bold),
+                italics: Boolean(s.italic),
+                underline: s.underline ? {} : undefined,
+                strike: Boolean(s.strikethrough),
+                color: colorHex,
+                font: fontName,
+                size: fontSizePt || 24,
+              }),
+            ],
+            alignment,
             spacing: { after: 100 },
           })
         );

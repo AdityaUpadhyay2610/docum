@@ -108,6 +108,9 @@ export default function TableBlock({ block, onChange }) {
                 >
                   <div className="flex items-center justify-between gap-1">
                     <input
+                      id={`table-${block?.id || 'main'}-th-${colIndex}`}
+                      name={`table_header_${colIndex}`}
+                      aria-label={`Table column ${colIndex + 1} header`}
                       type="text"
                       value={header}
                       placeholder={`Column ${colIndex + 1}`}
@@ -159,6 +162,9 @@ export default function TableBlock({ block, onChange }) {
                     className="min-w-[140px] px-3 py-1.5 border-r border-neutral-200/60 last:border-r-0"
                   >
                     <input
+                      id={`table-${block?.id || 'main'}-cell-${rowIndex}-${colIndex}`}
+                      name={`table_cell_${rowIndex}_${colIndex}`}
+                      aria-label={`Row ${rowIndex + 1}, Column ${colIndex + 1} content`}
                       type="text"
                       value={row[colIndex] || ''}
                       placeholder="Empty"

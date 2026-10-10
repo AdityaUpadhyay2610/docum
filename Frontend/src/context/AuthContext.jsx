@@ -1,34 +1,75 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+/**
+ * AuthContext – global authentication state
+ *
+ * Session lifecycle:
+ *
+ *  ┌──────────────┐   login / register   ┌──────────────────┐
+ *  │  logged out  │ ─────────────────────▶│  authenticated   │
+ *  └──────────────┘                       └──────────────────┘
+ *         ▲                                       │
+ *         │  auth:session-revoked event           │ access token expires
+ *         │  (refresh token invalid/revoked)      │ (TOKEN_EXPIRED)
+ *         │                                       ▼
+ *         │                               api.js silently POSTs /auth/refresh
+ *         │                               ├─ success → set new access token,
+ *         │                               │            replay original request
+ *         │                               │            user stays logged in ✅
+ *         └───────────────────────────────┘─ failure → fires auth:session-revoked
+ *                                                       AuthContext clears state
+ *                                                       user sees login screen ❌
+ *
+ * The user is NEVER logged out due to normal access token expiry.
+ * They are only logged out when:
+ *   • They click "Logout"
+ *   • The refresh token itself has expired (7-day idle)
+ *   • The backend revokes the session (password change, logout from another tab)
+ */
+
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+} from 'react';
 import authServices from '../services/authServices';
 import { getAccessToken, clearAuthTokens } from '../services/api';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
+  // Initialise from localStorage so there is no flicker on hard refresh
   const [user, setUser] = useState(() => {
     try {
-      const savedUser = localStorage.getItem('user');
-      return savedUser ? JSON.parse(savedUser) : null;
+      const saved = localStorage.getItem('user');
+      return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
     }
   });
 
-  const [isGuest, setIsGuest] = useState(() => {
-    return localStorage.getItem('isGuest') === 'true';
-  });
+  const [isGuest, setIsGuest] = useState(
+    () => localStorage.getItem('isGuest') === 'true'
+  );
 
+  // `loading` is only true during the initial session-validation on mount.
+  // It is NOT set to true during background silent refreshes.
   const [loading, setLoading] = useState(true);
+
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
 
-  // Initialize and verify user auth session
+
+
+  // ── Session init on mount ───────────────────────────────────────────────────
   useEffect(() => {
     let isMounted = true;
 
-    async function checkAuth() {
+    async function initSession() {
       const token = getAccessToken();
 
       if (token) {
+        // Fast path: we have an access token — validate it against /auth/me
+        // api.js will handle TOKEN_EXPIRED silently (refresh + retry) if needed
         try {
           const res = await authServices.getMe();
           if (isMounted && res?.user) {
@@ -36,30 +77,19 @@ export function AuthProvider({ children }) {
             localStorage.setItem('user', JSON.stringify(res.user));
             setIsGuest(false);
           }
-        } catch (err) {
-          console.warn('Access token expired, attempting silent cookie refresh:', err);
-          try {
-            const refreshRes = await authServices.refresh();
-            if (refreshRes && isMounted) {
-              const profileRes = await authServices.getMe();
-              if (isMounted && profileRes?.user) {
-                setUser(profileRes.user);
-                localStorage.setItem('user', JSON.stringify(profileRes.user));
-                setIsGuest(false);
-              }
-            }
-          } catch {
-            if (isMounted) {
-              clearAuthTokens();
-              setUser(null);
-            }
+        } catch {
+          // getMe failed AND silent refresh also failed → user must log in again
+          // (api.js already fired auth:session-revoked in this case)
+          if (isMounted) {
+            clearAuthTokens();
+            setUser(null);
           }
         }
       } else {
-        // Attempt silent cookie refresh even if access token is empty
+        // No access token in localStorage — attempt silent restore via cookie
         try {
           const refreshRes = await authServices.refresh();
-          if (refreshRes && isMounted) {
+          if (refreshRes?.accessToken && isMounted) {
             const profileRes = await authServices.getMe();
             if (isMounted && profileRes?.user) {
               setUser(profileRes.user);
@@ -68,53 +98,63 @@ export function AuthProvider({ children }) {
             }
           }
         } catch {
-          if (localStorage.getItem('isGuest') === 'true' && isMounted) {
+          // Cookie missing / expired — leave user as guest if they chose guest mode
+          if (isMounted && localStorage.getItem('isGuest') === 'true') {
             setIsGuest(true);
             setUser(null);
           }
         }
       }
 
-      if (isMounted) {
-        setLoading(false);
-      }
+      if (isMounted) setLoading(false);
     }
 
-    checkAuth();
+    initSession();
 
-    // Listen for global auth expiration events from api.js
-    const handleAuthExpired = () => {
+    // ── Global event: api.js fires this when a refresh fails ─────────────────
+    // This is the ONLY path that forces a logout due to token issues.
+    // It distinguishes credential mismatch / revoked session from normal expiry.
+    const handleSessionRevoked = (e) => {
+      const reason = e.detail?.reason ?? 'UNKNOWN';
+      console.warn('[AuthContext] Session revoked:', reason);
+      clearAuthTokens();
       setUser(null);
       setIsGuest(false);
-      clearAuthTokens();
     };
 
-    window.addEventListener('auth:expired', handleAuthExpired);
+    window.addEventListener('auth:session-revoked', handleSessionRevoked);
+
+    // Legacy event name — keep for backwards compatibility
+    window.addEventListener('auth:expired', handleSessionRevoked);
 
     return () => {
       isMounted = false;
-      window.removeEventListener('auth:expired', handleAuthExpired);
+      window.removeEventListener('auth:session-revoked', handleSessionRevoked);
+      window.removeEventListener('auth:expired', handleSessionRevoked);
     };
   }, []);
 
-  // Login handler
+  // ── Auth actions ────────────────────────────────────────────────────────────
+
   const login = useCallback(async (credentials) => {
     const res = await authServices.login(credentials);
-    setUser(res.user);
-    setIsGuest(false);
+    if (res?.user) {
+      setUser(res.user);
+      setIsGuest(false);
+    }
     return res;
   }, []);
 
-  // Register handler
   const register = useCallback(async (data) => {
     const res = await authServices.register(data);
-    setUser(res.user);
-    setIsGuest(false);
-    setIsRegisterModalOpen(false);
+    if (res?.user) {
+      setUser(res.user);
+      setIsGuest(false);
+      setIsRegisterModalOpen(false);
+    }
     return res;
   }, []);
 
-  // Continue as Guest handler
   const continueAsGuest = useCallback(() => {
     clearAuthTokens();
     setUser(null);
@@ -122,24 +162,31 @@ export function AuthProvider({ children }) {
     localStorage.setItem('isGuest', 'true');
   }, []);
 
-  // Logout handler
   const logout = useCallback(async () => {
-    await authServices.logout();
+    // Explicit user-initiated logout — revokes refresh token on the server
+    try {
+      await authServices.logout();
+    } catch {
+      // Even if the server call fails, clear local state
+    }
+    clearAuthTokens();
     setUser(null);
     setIsGuest(false);
   }, []);
 
-  const openRegisterModal = useCallback(() => {
-    setIsRegisterModalOpen(true);
-  }, []);
+  const openRegisterModal  = useCallback(() => setIsRegisterModalOpen(true),  []);
+  const closeRegisterModal = useCallback(() => setIsRegisterModalOpen(false), []);
 
-  const closeRegisterModal = useCallback(() => {
-    setIsRegisterModalOpen(false);
-  }, []);
+  // ── isAuthenticated: true when we have BOTH a user object AND an access token
+  // Using user state (not localStorage) prevents stale reads between renders.
+  // The access token check uses getAccessToken() which reads localStorage —
+  // this is fine because setAccessToken() is called synchronously before any
+  // state update, so isAuthenticated never flickers to false during a refresh.
+  const isAuthenticated = Boolean(user && getAccessToken());
 
   const value = {
     user,
-    isAuthenticated: Boolean(user && getAccessToken()),
+    isAuthenticated,
     isGuest,
     loading,
     login,

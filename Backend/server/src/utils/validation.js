@@ -1,20 +1,42 @@
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const DOCUMENT_BLOCK_TYPES = new Set([
-  'paragraph', 'h1', 'h2', 'h3', 'heading', 'bullet', 'numbered', 'todo',
-  'quote', 'code', 'divider', 'table', 'board',
-]);
-const BLOCK_STYLE_FIELDS = new Set(['fontFamily', 'fontSize', 'color', 'bold', 'italic', 'underline']);
-const FONT_FAMILIES = new Set(['Inter', 'Georgia', 'Arial', 'monospace']);
-const FONT_SIZES = new Set(['12px', '14px', '16px', '18px', '24px', '32px']);
+// ─── Constants ────────────────────────────────────────────────────────────────
 
-export const normalizeEmail = (email) => (typeof email === 'string' ? email.trim().toLowerCase() : '');
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const DOCUMENT_BLOCK_TYPES = new Set([
+  'paragraph', 'h1', 'h2', 'h3', 'heading',
+  'bullet', 'numbered', 'todo',
+  'quote', 'callout', 'code',
+  'divider', 'table', 'board',
+]);
+
+const BLOCK_STYLE_KEYS = new Set([
+  'fontFamily', 'fontSize', 'color', 'backgroundColor',
+  'bold', 'italic', 'underline', 'strikethrough',
+  'textAlign', 'lineHeight',
+]);
+
+const FONT_SIZE_RE = /^([8-9]|[1-9][0-9]|1[0-1][0-9]|120)px$/;
+const COLOR_RE = /^(#([0-9a-fA-F]{3,8})|rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)|rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*[\d.]+\s*\)|transparent)$/i;
+const TEXT_ALIGNS = new Set(['left', 'center', 'right', 'justify']);
+const CALLOUT_TYPES = new Set(['info', 'warning', 'success', 'error', 'tip']);
+
+// ─── Auth validation ──────────────────────────────────────────────────────────
+
+export const normalizeEmail = (email) =>
+  typeof email === 'string' ? email.trim().toLowerCase() : '';
 
 export const validateAuthInput = ({ name, email, password }, { requireName = false } = {}) => {
   const errors = {};
   const normalizedEmail = normalizeEmail(email);
 
-  if (requireName && (typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 80)) {
-    errors.name = 'Name must be between 2 and 80 characters';
+  if (requireName) {
+    if (typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 80) {
+      errors.name = 'Name must be between 2 and 80 characters';
+    }
+    // Block names with only special characters
+    if (!errors.name && !/[a-zA-Z]/.test(name.trim())) {
+      errors.name = 'Name must contain at least one letter';
+    }
   }
   if (!normalizedEmail || normalizedEmail.length > 254 || !EMAIL_PATTERN.test(normalizedEmail)) {
     errors.email = 'Please provide a valid email address';
@@ -22,45 +44,122 @@ export const validateAuthInput = ({ name, email, password }, { requireName = fal
   if (typeof password !== 'string' || password.length < 6 || password.length > 128) {
     errors.password = 'Password must be between 6 and 128 characters';
   }
+  // Warn on common weak passwords
+  if (!errors.password && /^(.)\1+$/.test(password)) {
+    errors.password = 'Password cannot be all the same character';
+  }
 
   return { errors, normalizedEmail };
 };
 
+// ─── Block validation ─────────────────────────────────────────────────────────
+
 const validateBlock = (block, index) => {
-  if (!block || typeof block !== 'object' || Array.isArray(block)) return `content[${index}] must be an object`;
-  if (typeof block.id !== 'string' || block.id.length < 1 || block.id.length > 100) return `content[${index}].id is invalid`;
-  if (!DOCUMENT_BLOCK_TYPES.has(block.type)) return `content[${index}].type is invalid`;
-  if (block.text !== undefined && (typeof block.text !== 'string' || block.text.length > 100000)) return `content[${index}].text is invalid`;
+  if (!block || typeof block !== 'object' || Array.isArray(block)) {
+    return `content[${index}] must be an object`;
+  }
+  if (typeof block.id !== 'string' || block.id.length < 1 || block.id.length > 100) {
+    return `content[${index}].id is invalid (must be 1–100 characters)`;
+  }
+  if (!DOCUMENT_BLOCK_TYPES.has(block.type)) {
+    return `content[${index}].type "${block.type}" is not a valid block type`;
+  }
+  if (block.text !== undefined) {
+    if (typeof block.text !== 'string') return `content[${index}].text must be a string`;
+    if (block.text.length > 100_000) return `content[${index}].text exceeds 100,000 characters`;
+  }
+  if (block.type === 'todo' && block.checked !== undefined && typeof block.checked !== 'boolean') {
+    return `content[${index}].checked must be a boolean`;
+  }
+  if (block.type === 'callout' && block.calloutType !== undefined) {
+    if (!CALLOUT_TYPES.has(block.calloutType)) {
+      return `content[${index}].calloutType "${block.calloutType}" is not allowed`;
+    }
+  }
   if (block.style !== undefined) {
     const style = block.style;
-    if (!style || typeof style !== 'object' || Object.keys(style).some((field) => !BLOCK_STYLE_FIELDS.has(field))) return `content[${index}].style is invalid`;
-    if (style.fontFamily !== undefined && !FONT_FAMILIES.has(style.fontFamily)) return `content[${index}].style.fontFamily is invalid`;
-    if (style.fontSize !== undefined && !FONT_SIZES.has(style.fontSize)) return `content[${index}].style.fontSize is invalid`;
-    if (style.color !== undefined && !/^#[0-9a-f]{6}$/i.test(style.color)) return `content[${index}].style.color is invalid`;
-    if (['bold', 'italic', 'underline'].some((field) => style[field] !== undefined && typeof style[field] !== 'boolean')) return `content[${index}].style value is invalid`;
+    if (!style || typeof style !== 'object' || Array.isArray(style)) {
+      return `content[${index}].style must be an object`;
+    }
+    const unknownKey = Object.keys(style).find((k) => !BLOCK_STYLE_KEYS.has(k));
+    if (unknownKey) return `content[${index}].style has unknown key "${unknownKey}"`;
+    if (style.fontFamily !== undefined && (typeof style.fontFamily !== 'string' || style.fontFamily.length > 100)) {
+      return `content[${index}].style.fontFamily is invalid`;
+    }
+    if (style.fontSize !== undefined && !FONT_SIZE_RE.test(style.fontSize)) {
+      return `content[${index}].style.fontSize "${style.fontSize}" must be a valid pixel size (8px–120px)`;
+    }
+    if (style.color !== undefined && !COLOR_RE.test(style.color)) {
+      return `content[${index}].style.color must be a valid hex/rgb color`;
+    }
+    if (style.backgroundColor !== undefined && !COLOR_RE.test(style.backgroundColor)) {
+      return `content[${index}].style.backgroundColor must be a valid color or "transparent"`;
+    }
+    for (const boolKey of ['bold', 'italic', 'underline', 'strikethrough']) {
+      if (style[boolKey] !== undefined && typeof style[boolKey] !== 'boolean') {
+        return `content[${index}].style.${boolKey} must be a boolean`;
+      }
+    }
+    if (style.textAlign !== undefined && !TEXT_ALIGNS.has(style.textAlign)) {
+      return `content[${index}].style.textAlign must be "left", "center", "right", or "justify"`;
+    }
+    if (style.lineHeight !== undefined && (typeof style.lineHeight !== 'string' || style.lineHeight.length > 10)) {
+      return `content[${index}].style.lineHeight is invalid`;
+    }
   }
   return null;
 };
+
+// ─── Document input validation ────────────────────────────────────────────────
 
 export const validateDocumentInput = (payload = {}, { partial = false } = {}) => {
   const errors = {};
   const allowedFields = new Set(['title', 'icon', 'coverImage', 'content']);
 
+  // Reject unknown fields
   Object.keys(payload).forEach((field) => {
-    if (!allowedFields.has(field)) errors[field] = 'This field is not allowed';
+    if (!allowedFields.has(field)) errors[field] = `"${field}" is not an allowed document field`;
   });
+
+  // Title validation
   if (!partial || payload.title !== undefined) {
-    if (typeof payload.title !== 'string' || payload.title.trim().length < 1 || payload.title.trim().length > 200) errors.title = 'Title must be between 1 and 200 characters';
+    if (
+      typeof payload.title !== 'string' ||
+      payload.title.trim().length < 1 ||
+      payload.title.trim().length > 200
+    ) {
+      errors.title = 'Title must be between 1 and 200 characters';
+    }
   }
-  if (payload.icon !== undefined && (typeof payload.icon !== 'string' || payload.icon.length > 20)) errors.icon = 'Icon must be a short string';
-  if (payload.coverImage !== undefined && (typeof payload.coverImage !== 'string' || payload.coverImage.length > 500)) errors.coverImage = 'Cover image value is too long';
+
+  // Icon validation
+  if (payload.icon !== undefined) {
+    if (typeof payload.icon !== 'string') errors.icon = 'Icon must be a string';
+    else if (payload.icon.length > 20) errors.icon = 'Icon must not exceed 20 characters';
+  }
+
+  // Cover image validation
+  if (payload.coverImage !== undefined) {
+    if (typeof payload.coverImage !== 'string') {
+      errors.coverImage = 'Cover image must be a string';
+    } else if (payload.coverImage.length > 500) {
+      errors.coverImage = 'Cover image reference cannot exceed 500 characters';
+    }
+  }
+
+  // Content validation
   if (payload.content !== undefined) {
-    if (!Array.isArray(payload.content) || payload.content.length > 500) errors.content = 'Content must be an array with at most 500 blocks';
-    else {
+    if (!Array.isArray(payload.content)) {
+      errors.content = 'Content must be an array';
+    } else if (payload.content.length > 500) {
+      errors.content = 'Content cannot contain more than 500 blocks';
+    } else {
       const blockError = payload.content.map(validateBlock).find(Boolean);
       if (blockError) errors.content = blockError;
     }
-  } else if (!partial) errors.content = 'Content must be an array';
+  } else if (!partial) {
+    errors.content = 'Content is required';
+  }
 
   return errors;
 };

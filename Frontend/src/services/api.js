@@ -1,87 +1,128 @@
 /**
- * Central API Client configuration and request wrapper
- * Supports automatic JWT bearer authorization, HttpOnly cookies, and silent token refresh
+ * Central API Client
+ *
+ * Silent refresh flow:
+ *  1. Every request attaches the stored access token as a Bearer header.
+ *  2. On 401 with code "TOKEN_EXPIRED"  → attempt one silent refresh via the
+ *     HttpOnly cookie (POST /auth/refresh).  On success, retry the original
+ *     request transparently – the caller never sees the 401.
+ *  3. On 401 with code "SESSION_REVOKED" (or any other non-expiry 401) →
+ *     clear local tokens and fire `auth:session-revoked` so AuthContext can
+ *     show the login screen.  Do NOT fire this event for normal token expiry.
+ *  4. Multiple concurrent requests that all 401 at the same moment queue up
+ *     (subscriber pattern) and are replayed once the single refresh resolves.
+ *  5. Refresh calls themselves (`/auth/refresh`) are never retried to avoid
+ *     infinite loops.
  */
 
+// ── Base URL ──────────────────────────────────────────────────────────────────
 function getApiBaseUrl() {
-  const envUrl = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim();
-  
-  // Remove trailing slashes
+  const envUrl = (
+    import.meta.env.VITE_API_URL ||
+    import.meta.env.VITE_API_BASE_URL ||
+    'http://localhost:3000'
+  ).trim();
+
   let url = envUrl.replace(/\/+$/, '');
-  
-  // If the URL accidentally contains endpoint paths like /api/documents or /documents, strip them back
   url = url.replace(/\/api\/documents\/?$/, '');
   url = url.replace(/\/documents\/?$/, '');
-  
-  // Ensure the base URL ends with /api
-  if (!url.endsWith('/api')) {
-    url = `${url}/api`;
-  }
-  
+  if (!url.endsWith('/api')) url = `${url}/api`;
   return url;
 }
 
 export const API_BASE_URL = getApiBaseUrl();
 
+// ── Error class ───────────────────────────────────────────────────────────────
 export class ApiError extends Error {
   constructor(message, status, data) {
     super(message);
-    this.name = 'ApiError';
+    this.name  = 'ApiError';
     this.status = status;
-    this.data = data;
+    this.data   = data;
+    // Expose the server-side `code` field for auth logic
+    this.code   = data?.code ?? null;
   }
 }
 
-// Token helpers (Only short-lived access token is stored; refresh token is strictly HttpOnly Cookie)
-// Automatically purge any old refreshToken stored from previous test sessions
-try {
-  localStorage.removeItem('refreshToken');
-} catch (error) {
-  console.warn('Unable to clear legacy refresh token:', error);
-}
+// ── Token helpers ─────────────────────────────────────────────────────────────
+// Only the short-lived access token lives in localStorage.
+// The refresh token is strictly HttpOnly cookie – JS never touches it.
+try { localStorage.removeItem('refreshToken'); } catch { /* ignore */ }
 
-export const getAccessToken = () => localStorage.getItem('accessToken');
-export const setAccessToken = (accessToken) => {
-  if (accessToken) localStorage.setItem('accessToken', accessToken);
-  try {
-    localStorage.removeItem('refreshToken');
-  } catch (error) {
-    console.warn('Unable to clear legacy refresh token:', error);
-  }
+export const getAccessToken  = ()       => localStorage.getItem('accessToken');
+export const setAccessToken  = (token)  => {
+  if (token) localStorage.setItem('accessToken', token);
+  try { localStorage.removeItem('refreshToken'); } catch { /* ignore */ }
 };
-export const clearAuthTokens = () => {
+export const clearAuthTokens = ()       => {
   localStorage.removeItem('accessToken');
   localStorage.removeItem('refreshToken');
   localStorage.removeItem('user');
   localStorage.removeItem('isGuest');
 };
 
-let isRefreshing = false;
-let refreshSubscribers = [];
-
-function subscribeTokenRefresh(cb) {
-  refreshSubscribers.push(cb);
+// ── Shared default headers ────────────────────────────────────────────────────
+function buildDefaultHeaders() {
+  return {
+    'Content-Type': 'application/json',
+    // Shared-secret header consumed by originGuard on the backend.
+    // Set VITE_APP_REQUEST_TOKEN in frontend .env to match APP_REQUEST_TOKEN on backend.
+    ...(import.meta.env.VITE_APP_REQUEST_TOKEN
+      ? { 'X-App-Request': import.meta.env.VITE_APP_REQUEST_TOKEN }
+      : {}),
+  };
 }
 
-function onRefreshed(newAccessToken) {
-  refreshSubscribers.forEach((cb) => cb(newAccessToken));
+// ── Silent refresh state machine ──────────────────────────────────────────────
+let isRefreshing      = false;
+let refreshSubscribers = [];   // queue of { resolve, reject } callbacks
+
+function enqueueRequest(resolve, reject) {
+  refreshSubscribers.push({ resolve, reject });
+}
+
+function flushSubscribers(newToken) {
+  refreshSubscribers.forEach(({ resolve }) => resolve(newToken));
   refreshSubscribers = [];
 }
 
-async function request(endpoint, options = {}, isRetry = false) {
-  const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+function rejectSubscribers(err) {
+  refreshSubscribers.forEach(({ reject }) => reject(err));
+  refreshSubscribers = [];
+}
 
-  const defaultHeaders = {
-    'Content-Type': 'application/json',
-  };
+// ── Core refresh attempt (called once per concurrent 401 burst) ───────────────
+async function attemptSilentRefresh() {
+  const refreshUrl = `${API_BASE_URL}/auth/refresh`;
+  const res = await fetch(refreshUrl, {
+    method:      'POST',
+    credentials: 'include',       // sends HttpOnly refreshToken cookie
+    headers:     buildDefaultHeaders(),
+    body:         JSON.stringify({}),
+  });
 
-  const token = getAccessToken();
-  if (token) {
-    defaultHeaders['Authorization'] = `Bearer ${token}`;
+  if (!res.ok) {
+    // Read the code the server sent back
+    let body;
+    try { body = await res.json(); } catch { /* ignore */ }
+    const code = body?.code ?? (res.status === 401 ? 'SESSION_REVOKED' : 'REFRESH_FAILED');
+    throw new ApiError(body?.error ?? 'Session expired', res.status, { ...body, code });
   }
 
+  const data = await res.json();
+  return data.accessToken;
+}
+
+// ── Main request function ─────────────────────────────────────────────────────
+async function request(endpoint, options = {}, _isRetry = false) {
+  const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+
+  const defaultHeaders = buildDefaultHeaders();
+  const token = getAccessToken();
+  if (token) defaultHeaders['Authorization'] = `Bearer ${token}`;
+
   const config = {
-    credentials: 'include', // Transmits HttpOnly cookie securely
+    credentials: 'include',
     ...options,
     headers: {
       ...defaultHeaders,
@@ -89,88 +130,100 @@ async function request(endpoint, options = {}, isRetry = false) {
     },
   };
 
+  // Serialize plain objects (but not FormData / strings)
   if (config.body && typeof config.body === 'object' && !(config.body instanceof FormData)) {
     config.body = JSON.stringify(config.body);
   }
 
-  try {
-    const res = await fetch(url, config);
+  const res  = await fetch(url, config);
 
-    let data = null;
-    const contentType = res.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      data = await res.json();
-    } else {
-      data = await res.text();
-    }
-
-    // Handle 401 Token Expiration (try silent refresh via HttpOnly cookie)
-    if (res.status === 401 && !isRetry && !endpoint.includes('/auth/')) {
-      if (!isRefreshing) {
-        isRefreshing = true;
-        try {
-          const refreshRes = await fetch(`${API_BASE_URL}/auth/refresh`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({}),
-          });
-
-          if (refreshRes.ok) {
-            const refreshData = await refreshRes.json();
-            setAccessToken(refreshData.accessToken);
-            isRefreshing = false;
-            onRefreshed(refreshData.accessToken);
-            return request(endpoint, options, true);
-          } else {
-            isRefreshing = false;
-            clearAuthTokens();
-            window.dispatchEvent(new CustomEvent('auth:expired'));
-          }
-        } catch (err) {
-          console.warn('Token refresh request failed:', err);
-          isRefreshing = false;
-          clearAuthTokens();
-          window.dispatchEvent(new CustomEvent('auth:expired'));
-        }
-      } else {
-        // Wait for the ongoing refresh to complete
-        return new Promise((resolve) => {
-          subscribeTokenRefresh((newToken) => {
-            const updatedOptions = {
-              ...options,
-              headers: {
-                ...options.headers,
-                Authorization: `Bearer ${newToken}`,
-              },
-            };
-            resolve(request(endpoint, updatedOptions, true));
-          });
-        });
-      }
-    }
-
-    if (!res.ok) {
-      const errorMessage = data?.error || data?.message || `Request failed with status ${res.status}`;
-      throw new ApiError(errorMessage, res.status, data);
-    }
-
-    return data;
-  } catch (error) {
-    if (error instanceof ApiError) {
-      throw error;
-    }
-    // Network or client-side fetch error
-    throw new ApiError(error.message || 'Network request failed', 0, null);
+  // Parse body
+  let data;
+  const ct = res.headers.get('content-type');
+  if (ct && ct.includes('application/json')) {
+    data = await res.json();
+  } else {
+    data = await res.text();
   }
+
+  // ── Silent refresh on access-token expiry ─────────────────────────────────
+  // Only trigger for:
+  //  • HTTP 401
+  //  • NOT already a retry (prevents infinite loops)
+  //  • NOT the refresh endpoint itself
+  //  • Server says code === 'TOKEN_EXPIRED'  (or no code — older servers)
+  const serverCode = data?.code ?? null;
+  const isExpiry   =
+    res.status === 401 &&
+    !_isRetry &&
+    !endpoint.includes('/auth/refresh') &&
+    (serverCode === 'TOKEN_EXPIRED' || serverCode === null);
+
+  if (isExpiry) {
+    if (!isRefreshing) {
+      // ── First concurrent request to hit 401 ── triggers the refresh
+      isRefreshing = true;
+      try {
+        const newToken = await attemptSilentRefresh();
+        setAccessToken(newToken);
+        isRefreshing = false;
+        flushSubscribers(newToken);
+        // Replay the original request with the new token
+        return request(endpoint, options, true);
+      } catch (refreshErr) {
+        isRefreshing = false;
+        rejectSubscribers(refreshErr);
+        // Only clear session and notify UI if the refresh itself was rejected
+        // (i.e. refresh token is expired / revoked / missing)
+        clearAuthTokens();
+        window.dispatchEvent(new CustomEvent('auth:session-revoked', {
+          detail: { reason: refreshErr?.code ?? 'REFRESH_FAILED' },
+        }));
+        // Re-throw so the original caller gets a proper error
+        throw refreshErr instanceof ApiError
+          ? refreshErr
+          : new ApiError('Session expired. Please log in again.', 401, { code: 'SESSION_REVOKED' });
+      }
+    } else {
+      // ── Subsequent concurrent requests — wait for the in-flight refresh ──
+      return new Promise((resolve, reject) => {
+        enqueueRequest(
+          (newToken) => {
+            const retryOptions = {
+              ...options,
+              headers: { ...options.headers, Authorization: `Bearer ${newToken}` },
+            };
+            resolve(request(endpoint, retryOptions, true));
+          },
+          reject,
+        );
+      });
+    }
+  }
+
+  // ── Any other non-ok response ─────────────────────────────────────────────
+  if (!res.ok) {
+    // 401 that is NOT a token-expiry (wrong credentials, session revoked, etc.)
+    if (res.status === 401 && !endpoint.includes('/auth/refresh')) {
+      clearAuthTokens();
+      window.dispatchEvent(new CustomEvent('auth:session-revoked', {
+        detail: { reason: serverCode ?? 'INVALID_CREDENTIALS' },
+      }));
+    }
+    const msg = data?.error || data?.message || `Request failed with status ${res.status}`;
+    throw new ApiError(msg, res.status, data);
+  }
+
+  return data;
 }
 
+// ── Public API surface ────────────────────────────────────────────────────────
 export const api = {
-  get: (endpoint, options) => request(endpoint, { ...options, method: 'GET' }),
-  post: (endpoint, body, options) => request(endpoint, { ...options, method: 'POST', body }),
-  put: (endpoint, body, options) => request(endpoint, { ...options, method: 'PUT', body }),
-  patch: (endpoint, body, options) => request(endpoint, { ...options, method: 'PATCH', body }),
-  delete: (endpoint, options) => request(endpoint, { ...options, method: 'DELETE' }),
+  get:    (endpoint, options)       => request(endpoint, { ...options, method: 'GET'    }),
+  post:   (endpoint, body, options) => request(endpoint, { ...options, method: 'POST',   body }),
+  put:    (endpoint, body, options) => request(endpoint, { ...options, method: 'PUT',    body }),
+  patch:  (endpoint, body, options) => request(endpoint, { ...options, method: 'PATCH',  body }),
+  delete: (endpoint, options)       => request(endpoint, { ...options, method: 'DELETE'        }),
 };
 
 export default api;

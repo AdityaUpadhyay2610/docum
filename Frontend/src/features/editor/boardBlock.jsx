@@ -170,6 +170,9 @@ export default function BoardBlock({ block, onChange }) {
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <span className={`w-2 h-2 rounded-full ${colorDef.dot} shrink-0`} />
                     <input
+                      id={`column-title-${col.id}`}
+                      name={`column_${col.id}_title`}
+                      aria-label="Column title"
                       type="text"
                       value={col.title}
                       onChange={(e) => handleColumnTitleChange(col.id, e.target.value)}
@@ -201,6 +204,9 @@ export default function BoardBlock({ block, onChange }) {
                     >
                       {/* Card Content Input */}
                       <textarea
+                        id={`card-title-${card.id}`}
+                        name={`card_${card.id}_title`}
+                        aria-label="Card title"
                         rows={1}
                         value={card.title}
                         onChange={(e) =>
@@ -251,6 +257,9 @@ export default function BoardBlock({ block, onChange }) {
                   {addingCardColId === col.id ? (
                     <div className="bg-white border border-blue-300 rounded-md p-2 shadow-xs space-y-1.5 animate-in fade-in zoom-in-95 duration-100">
                       <textarea
+                        id={`new-card-input-${col.id}`}
+                        name={`new_card_${col.id}`}
+                        aria-label="New card title"
                         autoFocus
                         rows={2}
                         value={newCardText[col.id] || ''}

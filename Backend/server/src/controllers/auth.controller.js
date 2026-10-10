@@ -2,9 +2,17 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/user.models.js';
 import { validateAuthInput } from '../utils/validation.js';
+import { penaliseFailedLogin, clearLoginBuckets } from '../middleware/tokenBucketGuard.middleware.js';
 
-const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || 'personal_workspace_jwt_access_secret_2026';
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'personal_workspace_jwt_refresh_secret_2026';
+const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
+
+// Crash at startup if secrets are missing – never fall back to insecure defaults
+if (!JWT_ACCESS_SECRET || !JWT_REFRESH_SECRET) {
+  throw new Error(
+    'FATAL: JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be set in environment variables.'
+  );
+}
 
 // Cookie configuration for maximum security (HttpOnly + SameSite + Secure in production)
 const COOKIE_OPTIONS = {
@@ -80,7 +88,7 @@ export const register = async (req, res) => {
     console.error('Registration error:', error);
     if (error.code === 11000) return res.status(409).json({ error: 'An account with this email already exists' });
     if (error.name === 'ValidationError') return res.status(400).json({ error: error.message });
-    return res.status(500).json({ error: 'Failed to register account', details: error.message });
+    return res.status(500).json({ error: 'Failed to register account' });
   }
 };
 
@@ -93,13 +101,20 @@ export const login = async (req, res) => {
     if (Object.keys(errors).length > 0) return res.status(400).json({ error: 'Please provide a valid email and password', fields: errors });
     const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
+      // Penalise even on unknown email – don't reveal whether account exists
+      if (req._tokenBucket) penaliseFailedLogin(req._tokenBucket.ip, normalizedEmail);
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
+      // Drain extra tokens from all three buckets (escalating penalty)
+      if (req._tokenBucket) penaliseFailedLogin(req._tokenBucket.ip, normalizedEmail);
       return res.status(401).json({ error: 'Invalid email or password' });
     }
+
+    // Successful login – reset token buckets so the user isn't penalised further
+    if (req._tokenBucket) clearLoginBuckets(req._tokenBucket.ip, normalizedEmail);
 
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
@@ -121,17 +136,20 @@ export const login = async (req, res) => {
     });
   } catch (error) {
     console.error('Login error:', error);
-    return res.status(500).json({ error: 'Failed to log in', details: error.message });
+    return res.status(500).json({ error: 'Failed to log in' });
   }
 };
 
-// POST /api/auth/refresh (Generate new access token using HttpOnly cookie)
+// POST /api/auth/refresh (Generate new access token using HttpOnly cookie ONLY)
+// NOTE: req.body.refreshToken is intentionally NOT accepted.
+// Refresh tokens must only be transmitted via the secure HttpOnly cookie.
+// This prevents non-browser clients (Postman, curl) from reusing a stolen refresh token.
 export const refreshAccessToken = async (req, res) => {
   try {
-    const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+    const refreshToken = req.cookies?.refreshToken;
 
     if (!refreshToken) {
-      return res.status(400).json({ error: 'Refresh token is required' });
+      return res.status(401).json({ error: 'No active session found. Please log in again.' });
     }
 
     let decoded;
@@ -139,13 +157,16 @@ export const refreshAccessToken = async (req, res) => {
       decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
     } catch (err) {
       res.clearCookie('refreshToken', COOKIE_OPTIONS);
-      return res.status(401).json({ error: 'Invalid or expired refresh token' });
+      // Distinguish expired cookie vs tampered token
+      const code = err.name === 'TokenExpiredError' ? 'REFRESH_TOKEN_EXPIRED' : 'SESSION_REVOKED';
+      return res.status(401).json({ error: 'Your session has expired. Please log in again.', code });
     }
 
     const user = await User.findById(decoded.userId);
     if (!user || user.refreshToken !== refreshToken) {
+      // Token was valid but not in DB – possible token reuse / account tampered
       res.clearCookie('refreshToken', COOKIE_OPTIONS);
-      return res.status(401).json({ error: 'Invalid refresh token or session revoked' });
+      return res.status(401).json({ error: 'Session is no longer valid. Please log in again.', code: 'SESSION_REVOKED' });
     }
 
     // Generate new access token (valid for 10m) and rotate refresh token
@@ -163,7 +184,7 @@ export const refreshAccessToken = async (req, res) => {
     });
   } catch (error) {
     console.error('Token refresh error:', error);
-    return res.status(500).json({ error: 'Failed to refresh token', details: error.message });
+    return res.status(500).json({ error: 'Failed to refresh token' });
   }
 };
 
@@ -180,7 +201,7 @@ export const logout = async (req, res) => {
     return res.status(200).json({ message: 'Logged out successfully' });
   } catch (error) {
     console.error('Logout error:', error);
-    return res.status(500).json({ error: 'Logout failed', details: error.message });
+    return res.status(500).json({ error: 'Logout failed' });
   }
 };
 

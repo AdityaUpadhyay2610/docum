@@ -1,50 +1,77 @@
-document-workspace/
-├── frontemd/                     # React Frontend (Vite) - Runs on Port 5173
+document-workshops/
+├── Frontend/                           # React Frontend (Vite) - Port 5173
 │   ├── public/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── common/         # Button.jsx, Modal.jsx, Spinner.jsx
+│   │   │   ├── auth/                   # GuestRegisterModal.jsx
+│   │   │   ├── common/                 # ColorPickerDropdown.jsx
 │   │   │   └── layout/
-│   │   │       ├── Navbar.jsx  # Page title, save indicator, share button
-│   │   │       └── Sidebar/
-│   │   │           ├── Sidebar.jsx
-│   │   │           └── DocumentItem.jsx
+│   │   │       └── sidebar/            # Collapsible sidebar & document items
+│   │   ├── context/
+│   │   │   ├── AuthContext.jsx         # User auth & guest mode state
+│   │   │   └── EditorSettingsContext.jsx # Margins, orientation, themes, zoom
 │   │   ├── features/
 │   │   │   └── editor/
-│   │   │       ├── EditorCanvas.jsx
-│   │   │       ├── EditorHeader.jsx
-│   │   │       └── hooks/
-│   │   │           └── useAutoSave.js
+│   │   │       ├── blocks/             # Text, Table, Board, Code, Callout blocks
+│   │   │       ├── components/
+│   │   │       │   ├── GoogleDocsToolbar.jsx # Google Docs header & action pill toolbar
+│   │   │       │   ├── DocumentRuler.jsx     # Horizontal margin ruler
+│   │   │       │   ├── DocumentOutline.jsx   # Heading navigator pane
+│   │   │       │   ├── FindReplaceModal.jsx  # Find & replace tool
+│   │   │       │   ├── ShortcutsModal.jsx    # Keyboard shortcuts cheat sheet
+│   │   │       │   └── PageFooter.jsx        # Status bar with word count & zoom
+│   │   │       ├── hooks/
+│   │   │       │   ├── useAutoSave.js        # Debounced cloud & local auto-save
+│   │   │       │   ├── useUndoRedo.js        # Undo / Redo history stack
+│   │   │       │   └── useWordStats.js       # Word & character count metrics
+│   │   │       ├── editorCanvas.jsx          # Paper sheet layout & click-to-type canvas
+│   │   │       ├── slashMenu.jsx             # Quick '/' block command menu
+│   │   │       └── index.js
 │   │   ├── pages/
-│   │   │   └── Workspace.jsx
+│   │   │   ├── WorkspacePage.jsx       # Main document workspace page
+│   │   │   ├── AuthPage.jsx            # Sign in & Registration page
+│   │   │   └── index.js
 │   │   ├── services/
-│   │   │   ├── api.js          # Axios client configured with backend baseURL
-│   │   │   └── documentService.js
-│   │   ├── store/
-│   │   │   └── useDocumentStore.js
-│   │   ├── App.jsx
-│   │   ├── main.jsx
-│   │   └── index.css
-│   ├── .env                    # VITE_API_URL=http://localhost:5000/api
+│   │   │   ├── api.js                  # Central fetch client with JWT & silent refresh
+│   │   │   ├── authServices.js         # User registration & login services
+│   │   │   ├── documentServices.js     # Document CRUD services
+│   │   │   ├── docxExport.js           # Word (.docx) generator (dynamically imported)
+│   │   │   ├── printService.js         # Semantic HTML printer (strips UI chrome)
+│   │   │   ├── validation.js           # Client-side input validators
+│   │   │   └── index.js
+│   │   ├── App.jsx                     # Route & Auth switcher
+│   │   ├── main.jsx                    # Vite React DOM entrypoint
+│   │   └── index.css                   # Global stylesheet & Tailwind
+│   ├── .env                            # VITE_API_URL=http://localhost:5000/api
 │   ├── package.json
-│   ├── tailwind.config.js
 │   └── vite.config.js
 │
-├── backend/                     # Express REST API - Runs on Port 5000
-│   ├── src/
-│   │   ├── config/
-│   │   │   └── db.js           # Database connection (MongoDB / PostgreSQL)
-│   │   ├── controllers/
-│   │   │   └── documentController.js # Handles request logic & status codes
-│   │   ├── models/
-│   │   │   └── Document.js     # Data schema (Title, Blocks/Content, ParentId)
-│   │   ├── routes/
-│   │   │   └── documentRoutes.js # Route mappings (GET, POST, PUT, DELETE)
-│   │   ├── middleware/
-│   │   │   └── errorHandler.js # Global error catching middleware
-│   │   └── app.js              # Express app setup, CORS, and route mounting
-│   ├── .env                    # PORT=5000, MONGO_URI=..., CLIENT_URL=http://localhost:5173
-│   ├── package.json
-│   └── server.js               # Entry point (listens on PORT)
+├── Backend/                            # Express REST API - Port 5000
+│   └── server/
+│       ├── src/
+│       │   ├── config/
+│       │   │   ├── db.config.js        # MongoDB connection
+│       │   │   ├── db.indexes.js       # MongoDB compound & text index sync
+│       │   │   └── document.aggregation.js # Optimized aggregation pipelines
+│       │   ├── controllers/
+│       │   │   ├── auth.controller.js  # User authentication & token rotation
+│       │   │   └── document.controller.js # Document CRUD handlers
+│       │   ├── models/
+│       │   │   ├── user.models.js      # User schema
+│       │   │   └── document.models.js  # Document blocks schema
+│       │   ├── routes/
+│       │   │   ├── auth.routes.js      # Auth API endpoints
+│       │   │   └── document.routes.js  # Document API endpoints
+│       │   ├── middleware/
+│       │   │   ├── auth.middleware.js  # JWT authentication verification
+│       │   │   └── validate.middleware.js # Express-validator request gatekeeper
+│       │   ├── validators/
+│       │   │   └── document.validator.js # Document schema & style validators
+│       │   ├── utils/
+│       │   │   └── validation.js       # Input sanitizer & validator utilities
+│       │   ├── app.js                  # Express app, CORS, security headers
+│       │   └── server.js               # HTTP listener entry point
+│       ├── .env                        # PORT=5000, MONGO_URI=..., CLIENT_URL=...
+│       └── package.json
 │
-└── README.md                   # Setup guide for running both services
+└── README.md                           # Documentation & quickstart guide

@@ -1,32 +1,64 @@
 import jwt from 'jsonwebtoken';
 
-const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || 'personal_workspace_jwt_access_secret_2026';
+const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
 
+if (!JWT_ACCESS_SECRET) {
+  throw new Error('FATAL: JWT_ACCESS_SECRET must be set in environment variables.');
+}
+
+/**
+ * Auth Middleware – verifies the Bearer access token on every protected route.
+ *
+ * Returns precise error codes so the frontend can distinguish:
+ *
+ *  TOKEN_EXPIRED      → access token is valid but past its `exp` claim.
+ *                       The client SHOULD attempt a silent refresh and replay.
+ *
+ *  INVALID_TOKEN      → token is malformed, tampered with, or signed with a
+ *                       different secret. The client MUST clear session and
+ *                       redirect to login.
+ *
+ *  TOKEN_MISSING      → no Authorization header / Bearer token present.
+ */
 export const authMiddleware = (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Authorization token required' });
+      return res.status(401).json({
+        error: 'Authorization token required',
+        code:  'TOKEN_MISSING',
+      });
     }
 
     const token = authHeader.split(' ')[1];
     if (!token) {
-      return res.status(401).json({ error: 'Authentication token missing' });
+      return res.status(401).json({
+        error: 'Authentication token missing',
+        code:  'TOKEN_MISSING',
+      });
     }
 
     const decoded = jwt.verify(token, JWT_ACCESS_SECRET);
     req.user = {
       userId: decoded.userId,
-      email: decoded.email,
-      name: decoded.name,
+      email:  decoded.email,
+      name:   decoded.name,
     };
 
     next();
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED' });
+      // Access token has expired – client should silently refresh, NOT logout
+      return res.status(401).json({
+        error: 'Access token expired',
+        code:  'TOKEN_EXPIRED',
+      });
     }
-    return res.status(401).json({ error: 'Invalid authentication token' });
+    // Anything else (JsonWebTokenError, NotBeforeError, etc.) = credential mismatch
+    return res.status(401).json({
+      error: 'Invalid authentication token',
+      code:  'INVALID_TOKEN',
+    });
   }
 };
 

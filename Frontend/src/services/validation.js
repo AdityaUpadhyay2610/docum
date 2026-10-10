@@ -1,10 +1,15 @@
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const BLOCK_TYPES = new Set([
   'paragraph', 'h1', 'h2', 'h3', 'heading', 'bullet', 'numbered', 'todo',
-  'quote', 'code', 'divider', 'table', 'board',
+  'quote', 'callout', 'code', 'divider', 'table', 'board', 'page-break',
 ]);
-const FONT_FAMILIES = new Set(['Inter', 'Georgia', 'Arial', 'monospace']);
-const FONT_SIZES = new Set(['12px', '14px', '16px', '18px', '24px', '32px']);
+const FONT_FAMILIES = new Set([
+  'Calibri', 'Aptos', 'Arial', 'Georgia', 'Inter',
+  'Times New Roman', 'Courier New', 'Verdana', 'Roboto', 'monospace', 'inherit'
+]);
+const FONT_SIZES = new Set([
+  '8px', '9px', '10px', '11px', '12px', '14px', '16px', '18px', '20px', '24px', '28px', '32px', '36px', '48px', '72px'
+]);
 
 export function validateAuthData({ name, email, password }, { requireName = false } = {}) {
   if (requireName && (!name || name.trim().length < 2 || name.trim().length > 80)) return 'Name must be between 2 and 80 characters';

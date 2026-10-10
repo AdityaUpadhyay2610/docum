@@ -1,12 +1,17 @@
 import { useState } from 'react';
 import { Trash2, Check, X } from 'lucide-react';
 
-export default function DocumentItem({ doc, isActive, onSelect, onDelete }) {
+export default function DocumentItem({ doc, document: documentProp, isActive, onSelect, onDelete }) {
+  const item = doc || documentProp || {};
+  const docId = item.id || item._id;
+  const docIcon = item.icon || '📝';
+  const docTitle = item.title && item.title.trim() !== '' ? item.title : 'Untitled';
+
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
 
   const handleDelete = (e) => {
     e.stopPropagation();
-    onDelete(doc.id || doc._id);
+    if (docId && onDelete) onDelete(docId);
     setIsConfirmingDelete(false);
   };
 
@@ -22,7 +27,7 @@ export default function DocumentItem({ doc, isActive, onSelect, onDelete }) {
 
   return (
     <div
-      onClick={() => onSelect(doc.id || doc._id)}
+      onClick={() => onSelect && docId && onSelect(docId)}
       className={`group flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer text-sm font-medium transition-all select-none ${
         isActive
           ? 'bg-neutral-200/90 text-neutral-900 font-semibold shadow-xs'
@@ -30,9 +35,9 @@ export default function DocumentItem({ doc, isActive, onSelect, onDelete }) {
       }`}
     >
       <div className="flex items-center gap-2 truncate min-w-0 flex-1 mr-1">
-        <span className="text-base shrink-0 select-none">{doc.icon || '📝'}</span>
+        <span className="text-base shrink-0 select-none">{docIcon}</span>
         <span className="truncate text-xs sm:text-sm">
-          {doc.title && doc.title.trim() !== '' ? doc.title : 'Untitled'}
+          {docTitle}
         </span>
       </div>
 
