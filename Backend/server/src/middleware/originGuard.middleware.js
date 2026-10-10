@@ -17,6 +17,8 @@
  * additionally rejects non-browser tool requests (which carry no Origin at all).
  */
 
+import config from '../config/config.js';
+
 const ALLOWED_ORIGINS = (() => {
   const list = [
     'http://localhost:5173',
@@ -24,8 +26,8 @@ const ALLOWED_ORIGINS = (() => {
     'http://127.0.0.1:5173',
     'http://127.0.0.1:5174',
   ];
-  if (process.env.CLIENT_URL) {
-    process.env.CLIENT_URL.split(',').forEach((u) => {
+  if (config.clientUrl) {
+    config.clientUrl.split(',').forEach((u) => {
       const t = u.trim().replace(/\/+$/, '');
       if (t) list.push(t);
     });
@@ -74,7 +76,7 @@ function extractOrigin(req) {
  * shared-secret header; the Origin check still applies.
  */
 export const originGuard = (req, res, next) => {
-  const isProd = process.env.NODE_ENV === 'production';
+  const isProd = config.isProd;
 
   const effectiveOrigin = extractOrigin(req);
 
@@ -89,7 +91,7 @@ export const originGuard = (req, res, next) => {
   // The frontend sets this header on every request via the API client.
   // Postman / curl users cannot know this value unless they have the env var.
   if (isProd) {
-    const appSecret = process.env.APP_REQUEST_TOKEN;
+    const appSecret = config.appRequestToken;
     const clientHeader = req.headers['x-app-request'];
 
     if (appSecret && clientHeader !== appSecret) {

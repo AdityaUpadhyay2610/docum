@@ -1,10 +1,5 @@
 import jwt from 'jsonwebtoken';
-
-const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET
-
-if (!JWT_ACCESS_SECRET) {
-  throw new Error('FATAL: JWT_ACCESS_SECRET must be set in environment variables.');
-}
+import config from '../config/config.js';
 
 /**
  * Auth Middleware – verifies the Bearer access token on every protected route.
@@ -38,7 +33,7 @@ export const authMiddleware = (req, res, next) => {
       });
     }
 
-    const decoded = jwt.verify(token, JWT_ACCESS_SECRET);
+    const decoded = jwt.verify(token, config.jwtAccessSecret);
     req.user = {
       userId: decoded.userId,
       email:  decoded.email,

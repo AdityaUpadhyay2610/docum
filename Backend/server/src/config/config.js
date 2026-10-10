@@ -1,0 +1,77 @@
+/**
+ * Central Configuration Module – Backend
+ *
+ * All environment variables are read and validated HERE.
+ * Every other module imports from this file instead of reading
+ * process.env directly. This gives us:
+ *  - A single crash-fast check at startup if required vars are missing
+ *  - Easy discoverability of every config key the app needs
+ *  - No silent undefined values scattered across the codebase
+ *
+ * Load order: server.js already calls `import 'dotenv/config'` before
+ * anything else, so process.env is fully populated by the time this
+ * module is evaluated.
+ */
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Read a required env var. Throws a descriptive error at startup if missing.
+ * @param {string} key - The environment variable name.
+ * @returns {string}
+ */
+function required(key) {
+  const value = process.env[key];
+  if (!value || value.trim() === '') {
+    throw new Error(
+      `FATAL: Environment variable "${key}" must be set. ` +
+      `Check your .env file or deployment platform settings.`
+    );
+  }
+  return value.trim();
+}
+
+/**
+ * Read an optional env var with a fallback.
+ * @param {string} key - The environment variable name.
+ * @param {string} fallback - Default value if the var is not set.
+ * @returns {string}
+ */
+function optional(key, fallback = '') {
+  const value = process.env[key];
+  return value ? value.trim() : fallback;
+}
+
+// ── Configuration Object ──────────────────────────────────────────────────────
+
+const config = {
+  // ── Server ──────────────────────────────────────────────────────────────────
+  port: parseInt(optional('PORT', '3000'), 10),
+  nodeEnv: optional('NODE_ENV', 'development'),
+  get isProd() {
+    return this.nodeEnv === 'production';
+  },
+
+  // ── Database ─────────────────────────────────────────────────────────────────
+  mongoUri: required('MONGO_URI'),
+
+  // ── JWT Secrets ──────────────────────────────────────────────────────────────
+  // IMPORTANT: Both must be long, random hex strings. Never use plain words.
+  jwtAccessSecret:  required('JWT_ACCESS_SECRET'),
+  jwtRefreshSecret: required('JWT_REFRESH_SECRET'),
+
+  // JWT token lifetimes
+  jwtAccessExpiresIn:  optional('JWT_ACCESS_EXPIRES_IN',  '10m'),
+  jwtRefreshExpiresIn: optional('JWT_REFRESH_EXPIRES_IN', '7d'),
+
+  // ── CORS & Client ────────────────────────────────────────────────────────────
+  // Comma-separated list of allowed frontend origins (e.g. Vercel preview URL)
+  clientUrl: optional('CLIENT_URL', ''),
+
+  // ── Origin Guard shared secret ───────────────────────────────────────────────
+  // The frontend sends this in the X-App-Request header on every request.
+  // Must match VITE_APP_REQUEST_TOKEN in the frontend .env.
+  appRequestToken: optional('APP_REQUEST_TOKEN', ''),
+};
+
+export default config;

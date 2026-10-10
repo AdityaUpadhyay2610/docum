@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import dns from 'dns';
 import { ensureIndexes } from './db.indexes.js';
+import config from './config.js';
 
 // Force Node to use reliable public DNS servers for SRV resolution when connecting to Atlas
 try {
@@ -10,12 +11,7 @@ try {
 }
 
 const connectDB = async () => {
-  const uri = process.env.MONGO_URI;
-  if (!uri) {
-    console.error('❌ MONGO_URI is missing in environment variables.');
-    process.exit(1);
-  }
-
+  const uri = config.mongoUri;  // validated & required at startup by config.js
   try {
     const conn = await mongoose.connect(uri, {
       // Recommended connection pool settings for production

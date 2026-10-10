@@ -15,15 +15,11 @@
  *     infinite loops.
  */
 
+import config from '../config.js';
+
 // ── Base URL ──────────────────────────────────────────────────────────────────
 function getApiBaseUrl() {
-  const envUrl = (
-    import.meta.env.VITE_API_URL ||
-    import.meta.env.VITE_API_BASE_URL ||
-    'http://localhost:3000'
-  ).trim();
-
-  let url = envUrl.replace(/\/+$/, '');
+  let url = config.apiUrl.replace(/\/+$/, '');
   url = url.replace(/\/api\/documents\/?$/, '');
   url = url.replace(/\/documents\/?$/, '');
   if (!url.endsWith('/api')) url = `${url}/api`;
@@ -67,8 +63,8 @@ function buildDefaultHeaders() {
     'Content-Type': 'application/json',
     // Shared-secret header consumed by originGuard on the backend.
     // Set VITE_APP_REQUEST_TOKEN in frontend .env to match APP_REQUEST_TOKEN on backend.
-    ...(import.meta.env.VITE_APP_REQUEST_TOKEN
-      ? { 'X-App-Request': import.meta.env.VITE_APP_REQUEST_TOKEN }
+    ...(config.appRequestToken
+      ? { 'X-App-Request': config.appRequestToken }
       : {}),
   };
 }

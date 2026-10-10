@@ -16,6 +16,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import config from './config/config.js';
 
 import documentRoutes from './routes/document.routes.js';
 import authRoutes from './routes/auth.routes.js';
@@ -43,8 +44,8 @@ const allowedOrigins = [
   'http://127.0.0.1:5174',
 ];
 
-if (process.env.CLIENT_URL) {
-  process.env.CLIENT_URL.split(',').forEach((url) => {
+if (config.clientUrl) {
+  config.clientUrl.split(',').forEach((url) => {
     const trimmed = url.trim().replace(/\/+$/, '');
     if (trimmed) allowedOrigins.push(trimmed);
   });
@@ -56,7 +57,7 @@ app.use(
       // In production: DENY requests with no origin (Postman, curl, server-to-server)
       // In development: allow no-origin for easier local testing
       if (!origin) {
-        if (process.env.NODE_ENV === 'production') {
+        if (config.isProd) {
           return callback(new Error('Direct API access is not permitted'));
         }
         return callback(null, true);
@@ -99,7 +100,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // ── 6. Health Check (internal / ops use only, not behind origin guard) ─────────
 // Returns minimal info – no sensitive uptime or version data in production
 app.get('/api/health', (req, res) => {
-  if (process.env.NODE_ENV === 'production') {
+  if (config.isProd) {
     return res.status(200).json({ status: 'ok' });
   }
   return res.status(200).json({
@@ -123,14 +124,14 @@ app.use((req, res) => {
 // ── 10. Global Error Handler ───────────────────────────────────────────────────
 app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
   // Suppress stack traces in production
-  if (process.env.NODE_ENV !== 'production') {
+  if (!config.isProd) {
     console.error('Unhandled server error:', err);
   } else {
     console.error(`[${new Date().toISOString()}] ${err.message}`);
   }
   res.status(err.status || 500).json({
     error:
-      process.env.NODE_ENV === 'production'
+      config.isProd
         ? 'An unexpected error occurred'
         : err.message || 'Internal server error',
   });

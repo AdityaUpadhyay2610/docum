@@ -3,26 +3,20 @@ import jwt from 'jsonwebtoken';
 import User from '../models/user.models.js';
 import { validateAuthInput } from '../utils/validation.js';
 import { penaliseFailedLogin, clearLoginBuckets } from '../middleware/tokenBucketGuard.middleware.js';
+import config from '../config/config.js';
 
-const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
-
-// Crash at startup if secrets are missing – never fall back to insecure defaults
-if (!JWT_ACCESS_SECRET || !JWT_REFRESH_SECRET) {
-  throw new Error(
-    'FATAL: JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be set in environment variables.'
-  );
-}
+// JWT secrets and lifetimes come from the central config module.
+// config.js throws at startup if either secret is missing, so no guard needed here.
 
 // Cookie configuration for maximum security (HttpOnly + SameSite + Secure in production)
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  secure: config.isProd,
+  sameSite: config.isProd ? 'none' : 'lax',
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
 };
 
-// Helper to generate access token (10 minutes validity)
+// Helper to generate access token
 const generateAccessToken = (user) => {
   return jwt.sign(
     {
@@ -30,19 +24,19 @@ const generateAccessToken = (user) => {
       email: user.email,
       name: user.name,
     },
-    JWT_ACCESS_SECRET,
-    { expiresIn: '10m' }
+    config.jwtAccessSecret,
+    { expiresIn: config.jwtAccessExpiresIn }
   );
 };
 
-// Helper to generate refresh token (7 days validity)
+// Helper to generate refresh token
 const generateRefreshToken = (user) => {
   return jwt.sign(
     {
       userId: user._id,
     },
-    JWT_REFRESH_SECRET,
-    { expiresIn: '7d' }
+    config.jwtRefreshSecret,
+    { expiresIn: config.jwtRefreshExpiresIn }
   );
 };
 
@@ -154,7 +148,7 @@ export const refreshAccessToken = async (req, res) => {
 
     let decoded;
     try {
-      decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
+      decoded = jwt.verify(refreshToken, config.jwtRefreshSecret);
     } catch (err) {
       res.clearCookie('refreshToken', COOKIE_OPTIONS);
       // Distinguish expired cookie vs tampered token
