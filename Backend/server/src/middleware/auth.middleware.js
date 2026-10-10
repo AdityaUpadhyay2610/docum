@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 
-const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
+const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET
 
 if (!JWT_ACCESS_SECRET) {
   throw new Error('FATAL: JWT_ACCESS_SECRET must be set in environment variables.');

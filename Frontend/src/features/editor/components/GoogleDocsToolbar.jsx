@@ -201,10 +201,10 @@ export default function GoogleDocsToolbar({
           <button
             type="button"
             onClick={() => onToggleSidebar?.()}
-            className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs cursor-pointer hover:bg-blue-700 active:scale-95 transition-all shrink-0"
+            className="w-10 h-10 rounded-xl  text-black flex items-center justify-center shadow-xs cursor-pointer  active:scale-95 transition-all shrink-0"
             title="Toggle Document Explorer Sidebar"
           >
-            <FileText className="w-5 h-5" />
+            <BookOpen className="w-5 h-5 text-black" />
           </button>
 
           {/* Title and Top Menus Container */}
