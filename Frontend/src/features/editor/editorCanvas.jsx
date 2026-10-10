@@ -73,12 +73,29 @@ export default function EditorCanvas({
     el.style.height = `${el.scrollHeight}px`;
   }, []);
 
-  // Resize all textareas when blocks change
+  // Resize all textareas when blocks or title change
   useEffect(() => {
+    if (titleRef.current && titleRef.current.tagName === 'TEXTAREA') {
+      autoResize(titleRef.current);
+    }
     Object.values(blockRefs.current).forEach((el) => {
       if (el && el.tagName === 'TEXTAREA') autoResize(el);
     });
-  }, [blocks, autoResize]);
+  }, [blocks, title, autoResize]);
+
+  // Auto-resize on window / viewport resize (split screen, mobile, sidebar toggle)
+  useEffect(() => {
+    const handleResize = () => {
+      if (titleRef.current && titleRef.current.tagName === 'TEXTAREA') {
+        autoResize(titleRef.current);
+      }
+      Object.values(blockRefs.current).forEach((el) => {
+        if (el && el.tagName === 'TEXTAREA') autoResize(el);
+      });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [autoResize]);
 
   // ─── Auto-initialize empty document & Auto-Focus Cursor ───────────────────────
   useEffect(() => {
@@ -407,9 +424,19 @@ export default function EditorCanvas({
   const getBlockWeight = useCallback((block) => {
     if (!block) return 0;
     if (block.type === 'page-break') return 999999;
-    if (block.type === 'h1' || block.type === 'heading') return 45;
-    if (block.type === 'h2') return 35;
-    if (block.type === 'h3') return 25;
+    // Headings take ~1-2 lines visually; use actual word count + small overhead
+    if (block.type === 'h1' || block.type === 'heading') {
+      const hw = block.text ? block.text.trim().split(/\s+/).filter(Boolean).length : 0;
+      return hw + 15;
+    }
+    if (block.type === 'h2') {
+      const hw = block.text ? block.text.trim().split(/\s+/).filter(Boolean).length : 0;
+      return hw + 10;
+    }
+    if (block.type === 'h3') {
+      const hw = block.text ? block.text.trim().split(/\s+/).filter(Boolean).length : 0;
+      return hw + 8;
+    }
     if (block.type === 'table') return 140;
     if (block.type === 'board') return 180;
     if (block.type === 'callout') {
@@ -430,7 +457,9 @@ export default function EditorCanvas({
   const pages = useMemo(() => {
     const result = [[]];
     let pageIndex = 0;
-    let currentWordsOnPage = title && title.trim() ? 40 : 0;
+    // Title takes roughly 1-2 lines; use actual word count + small overhead
+    const titleWords = title && title.trim() ? title.trim().split(/\s+/).filter(Boolean).length : 0;
+    let currentWordsOnPage = titleWords > 0 ? titleWords + 10 : 0;
 
     blocks.forEach((block, globalIndex) => {
       // 1. Manual Page Break
@@ -448,32 +477,40 @@ export default function EditorCanvas({
         (!block.type || block.type === 'paragraph') &&
         weight > TARGET_WORDS_PER_PAGE
       ) {
-        // Split giant text into natural page-sized chunks of ~360 words
-        const words = (block.text || '').split(/(\s+)/);
+        // Calculate remaining capacity on the current page
+        const remainingCapacity = Math.max(80, TARGET_WORDS_PER_PAGE - currentWordsOnPage);
+        // First chunk target fills the remaining space on the current page
+        const firstChunkTarget = Math.min(remainingCapacity, 400);
+
+        const allWords = (block.text || '').split(/(\s+)/);
         let chunkWords = [];
         let chunkCount = 0;
         const textChunks = [];
+        let isFirstChunk = true;
 
-        for (let i = 0; i < words.length; i++) {
-          const w = words[i];
+        for (let i = 0; i < allWords.length; i++) {
+          const w = allWords[i];
           chunkWords.push(w);
           if (w.trim().length > 0) chunkCount++;
 
+          const targetSize = isFirstChunk ? firstChunkTarget : 380;
+          const maxSize = isFirstChunk ? firstChunkTarget + 40 : 420;
           const isBoundary = w.includes('\n') || w.includes('.') || w.includes('!') || w.includes('?');
-          if ((chunkCount >= 360 && isBoundary) || chunkCount >= 420) {
+          if ((chunkCount >= targetSize && isBoundary) || chunkCount >= maxSize) {
             textChunks.push(chunkWords.join(''));
             chunkWords = [];
             chunkCount = 0;
+            isFirstChunk = false;
           }
         }
         if (chunkWords.length > 0) {
           textChunks.push(chunkWords.join(''));
         }
 
-        // Distribute text chunks across pages
+        // Distribute text chunks across pages — first chunk stays on current page
         textChunks.forEach((chunkText, cIdx) => {
           const chunkWeight = Math.max(20, chunkText.trim().split(/\s+/).filter(Boolean).length);
-          if (currentWordsOnPage + chunkWeight > TARGET_WORDS_PER_PAGE && result[pageIndex].length > 0) {
+          if (cIdx > 0 && currentWordsOnPage + chunkWeight > TARGET_WORDS_PER_PAGE) {
             pageIndex += 1;
             result[pageIndex] = [];
             currentWordsOnPage = 0;
@@ -544,55 +581,58 @@ export default function EditorCanvas({
         <div className="w-full">
           {/* H1 */}
           {(block.type === 'h1' || block.type === 'heading') && (
-            <input
+            <textarea
               id={`block-h1-${targetRefId}`}
               name={`block_h1_${targetRefId}`}
               aria-label="Heading 1 content"
-              ref={(el) => (blockRefs.current[targetRefId] = el)}
-              type="text"
+              ref={(el) => { blockRefs.current[targetRefId] = el; if (el) autoResize(el); }}
+              rows={1}
               value={block.text || ''}
               placeholder="Heading 1"
+              onInput={(e) => autoResize(e.target)}
               onChange={(e) => handleTextChange(block.id, e.target.value, e.target)}
               onFocus={() => handleBlockFocus(block.id, pageIdx)}
               onKeyDown={(e) => handleKeyDown(e, globalIndex, block)}
               style={getBlockStyle(block)}
-              className="w-full text-2xl sm:text-3xl font-extrabold text-neutral-900 placeholder-neutral-300 border-none bg-transparent focus:outline-none py-1 tracking-tight"
+              className="w-full text-2xl sm:text-3xl font-extrabold text-neutral-900 placeholder-neutral-300 border-none bg-transparent focus:outline-none py-1 tracking-tight resize-none overflow-hidden break-words leading-tight"
             />
           )}
 
           {/* H2 */}
           {block.type === 'h2' && (
-            <input
+            <textarea
               id={`block-h2-${targetRefId}`}
               name={`block_h2_${targetRefId}`}
               aria-label="Heading 2 content"
-              ref={(el) => (blockRefs.current[targetRefId] = el)}
-              type="text"
+              ref={(el) => { blockRefs.current[targetRefId] = el; if (el) autoResize(el); }}
+              rows={1}
               value={block.text || ''}
               placeholder="Heading 2"
+              onInput={(e) => autoResize(e.target)}
               onChange={(e) => handleTextChange(block.id, e.target.value, e.target)}
               onFocus={() => handleBlockFocus(block.id, pageIdx)}
               onKeyDown={(e) => handleKeyDown(e, globalIndex, block)}
               style={getBlockStyle(block)}
-              className="w-full text-xl sm:text-2xl font-bold text-neutral-800 placeholder-neutral-300 border-none bg-transparent focus:outline-none py-0.5 tracking-tight"
+              className="w-full text-xl sm:text-2xl font-bold text-neutral-800 placeholder-neutral-300 border-none bg-transparent focus:outline-none py-0.5 tracking-tight resize-none overflow-hidden break-words leading-snug"
             />
           )}
 
           {/* H3 */}
           {block.type === 'h3' && (
-            <input
+            <textarea
               id={`block-h3-${targetRefId}`}
               name={`block_h3_${targetRefId}`}
               aria-label="Heading 3 content"
-              ref={(el) => (blockRefs.current[targetRefId] = el)}
-              type="text"
+              ref={(el) => { blockRefs.current[targetRefId] = el; if (el) autoResize(el); }}
+              rows={1}
               value={block.text || ''}
               placeholder="Heading 3"
+              onInput={(e) => autoResize(e.target)}
               onChange={(e) => handleTextChange(block.id, e.target.value, e.target)}
               onFocus={() => handleBlockFocus(block.id, pageIdx)}
               onKeyDown={(e) => handleKeyDown(e, globalIndex, block)}
               style={getBlockStyle(block)}
-              className="w-full text-lg sm:text-xl font-semibold text-neutral-800 placeholder-neutral-300 border-none bg-transparent focus:outline-none py-0.5 tracking-tight"
+              className="w-full text-lg sm:text-xl font-semibold text-neutral-800 placeholder-neutral-300 border-none bg-transparent focus:outline-none py-0.5 tracking-tight resize-none overflow-hidden break-words leading-snug"
             />
           )}
 
@@ -608,19 +648,20 @@ export default function EditorCanvas({
                 onChange={() => handleToggleTodo(block.id)}
                 className="mt-1.5 rounded w-4 h-4 accent-neutral-900 cursor-pointer shrink-0"
               />
-              <input
+              <textarea
                 id={`block-todo-text-${targetRefId}`}
                 name={`block_todo_text_${targetRefId}`}
                 aria-label="To-do task content"
-                ref={(el) => (blockRefs.current[targetRefId] = el)}
-                type="text"
+                ref={(el) => { blockRefs.current[targetRefId] = el; if (el) autoResize(el); }}
+                rows={1}
                 value={block.text || ''}
                 placeholder="To-do item..."
+                onInput={(e) => autoResize(e.target)}
                 onChange={(e) => handleTextChange(block.id, e.target.value, e.target)}
                 onFocus={() => handleBlockFocus(block.id, pageIdx)}
                 onKeyDown={(e) => handleKeyDown(e, globalIndex, block)}
                 style={getBlockStyle(block)}
-                className={`w-full text-base bg-transparent border-none focus:outline-none min-w-0 ${block.checked ? 'line-through text-neutral-400' : 'text-neutral-800'}`}
+                className={`w-full text-base bg-transparent border-none focus:outline-none min-w-0 resize-none overflow-hidden break-words leading-relaxed py-0.5 ${block.checked ? 'line-through text-neutral-400' : 'text-neutral-800'}`}
               />
             </div>
           )}
@@ -629,19 +670,20 @@ export default function EditorCanvas({
           {block.type === 'bullet' && (
             <div className="flex items-start gap-2.5 py-0.5">
               <span className="w-1.5 h-1.5 rounded-full bg-neutral-600 shrink-0 mt-2.5 mx-1" />
-              <input
+              <textarea
                 id={`block-bullet-${targetRefId}`}
                 name={`block_bullet_${targetRefId}`}
                 aria-label="Bullet list item"
-                ref={(el) => (blockRefs.current[targetRefId] = el)}
-                type="text"
+                ref={(el) => { blockRefs.current[targetRefId] = el; if (el) autoResize(el); }}
+                rows={1}
                 value={block.text || ''}
                 placeholder="List item..."
+                onInput={(e) => autoResize(e.target)}
                 onChange={(e) => handleTextChange(block.id, e.target.value, e.target)}
                 onFocus={() => handleBlockFocus(block.id, pageIdx)}
                 onKeyDown={(e) => handleKeyDown(e, globalIndex, block)}
                 style={getBlockStyle(block)}
-                className="w-full text-base text-neutral-800 placeholder-neutral-300 border-none bg-transparent focus:outline-none py-0.5 min-w-0"
+                className="w-full text-base text-neutral-800 placeholder-neutral-300 border-none bg-transparent focus:outline-none py-0.5 min-w-0 resize-none overflow-hidden break-words leading-relaxed"
               />
             </div>
           )}
@@ -652,19 +694,20 @@ export default function EditorCanvas({
               <span className="font-mono text-sm text-neutral-500 shrink-0 mt-1 min-w-[20px] select-none font-semibold">
                 {(() => { numberedCounter += 1; return numberedCounter; })()}.
               </span>
-              <input
+              <textarea
                 id={`block-numbered-${targetRefId}`}
                 name={`block_numbered_${targetRefId}`}
                 aria-label="Numbered list item"
-                ref={(el) => (blockRefs.current[targetRefId] = el)}
-                type="text"
+                ref={(el) => { blockRefs.current[targetRefId] = el; if (el) autoResize(el); }}
+                rows={1}
                 value={block.text || ''}
                 placeholder="Numbered item..."
+                onInput={(e) => autoResize(e.target)}
                 onChange={(e) => handleTextChange(block.id, e.target.value, e.target)}
                 onFocus={() => handleBlockFocus(block.id, pageIdx)}
                 onKeyDown={(e) => handleKeyDown(e, globalIndex, block)}
                 style={getBlockStyle(block)}
-                className="w-full text-base text-neutral-800 placeholder-neutral-300 border-none bg-transparent focus:outline-none py-0.5 min-w-0"
+                className="w-full text-base text-neutral-800 placeholder-neutral-300 border-none bg-transparent focus:outline-none py-0.5 min-w-0 resize-none overflow-hidden break-words leading-relaxed"
               />
             </div>
           )}
@@ -808,21 +851,22 @@ export default function EditorCanvas({
               {/* Document Title — on first page */}
               {isFirstPage && (
                 <div className="mb-4 sm:mb-6">
-                  <input
+                  <textarea
                     id="editor-document-title-input"
                     name="document_title"
                     aria-label="Document title"
                     ref={titleRef}
-                    type="text"
+                    rows={1}
                     value={title || ''}
                     onChange={(e) => onTitleChange?.(e.target.value)}
+                    onInput={(e) => autoResize(e.target)}
                     onKeyDown={handleTitleKeyDown}
                     placeholder="Untitled Document"
                     className={`
                       w-full bg-transparent border-none outline-none p-0
                       text-2xl sm:text-3xl md:text-[2.25rem] font-bold leading-tight tracking-tight
                       placeholder:text-neutral-300 ${themeConfig.text || 'text-neutral-900'}
-                      transition-colors
+                      transition-colors resize-none overflow-hidden break-words
                     `}
                   />
                 </div>
