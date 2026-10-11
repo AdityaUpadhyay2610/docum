@@ -82,7 +82,22 @@ const validateBlock = (block, index) => {
   return null;
 };
 
-// ─── Schema ───────────────────────────────────────────────────────────────────
+const encryptedFieldSchema = new mongoose.Schema(
+  {
+    v:  { type: String, default: null },
+    iv: { type: String, default: null },
+    ct: { type: String, default: null },
+  },
+  { _id: false }
+);
+
+const encryptedDekSchema = new mongoose.Schema(
+  {
+    wrappedDek: { type: String, default: null },
+    dekIv:      { type: String, default: null },
+  },
+  { _id: false }
+);
 
 const documentSchema = new mongoose.Schema(
   {
@@ -92,13 +107,36 @@ const documentSchema = new mongoose.Schema(
       required: [true, 'Document must belong to a user'],
       index: true,
     },
+    // Explicit integer revision counter for optimistic concurrency (ETag)
+    revision: {
+      type: Number,
+      default: 0,
+      required: true,
+    },
+    // Flag indicating whether document sensitive fields are encrypted client-side
+    isEncrypted: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    // ── Encrypted envelope fields (stored opaque in DB) ──────────────────────
+    encTitle:   { type: encryptedFieldSchema, default: null },
+    encIcon:    { type: encryptedFieldSchema, default: null },
+    encContent: { type: encryptedFieldSchema, default: null },
+    encDek:     { type: encryptedDekSchema,   default: null },
+
+    // ── Plaintext fields (used for non-vault users or placeholder metadata) ───
     title: {
       type: String,
       default: 'Untitled',
       trim: true,
-      required: [true, 'Title is required'],
-      minlength: [1, 'Title must be at least 1 character'],
-      maxlength: [200, 'Title cannot exceed 200 characters'],
+      validate: {
+        validator: function (v) {
+          if (this.isEncrypted) return true;
+          return typeof v === 'string' && v.trim().length >= 1 && v.trim().length <= 200;
+        },
+        message: 'Title must be between 1 and 200 characters',
+      },
     },
     icon: {
       type: String,
@@ -123,11 +161,15 @@ const documentSchema = new mongoose.Schema(
       default: [],
       validate: [
         {
-          validator: (value) => Array.isArray(value) && value.length <= 500,
+          validator: function (value) {
+            if (this.isEncrypted) return true;
+            return Array.isArray(value) && value.length <= 500;
+          },
           message: 'Document content cannot contain more than 500 blocks',
         },
         {
-          validator: (value) => {
+          validator: function (value) {
+            if (this.isEncrypted) return true;
             if (!Array.isArray(value)) return false;
             return value.every((block, i) => validateBlock(block, i) === null);
           },

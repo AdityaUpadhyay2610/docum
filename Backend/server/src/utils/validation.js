@@ -133,7 +133,88 @@ const validateBlock = (block, index) => {
 
 export const validateDocumentInput = (payload = {}, { partial = false } = {}) => {
   const errors = {};
-  const allowedFields = new Set(['title', 'icon', 'coverImage', 'content']);
+
+  if (payload.isEncrypted === true) {
+    const allowedEncFields = new Set([
+      '_id', 'isEncrypted', 'revision', 'title', 'icon', 'coverImage',
+      'encTitle', 'encIcon', 'encContent', 'encDek',
+    ]);
+
+    Object.keys(payload).forEach((field) => {
+      if (!allowedEncFields.has(field)) {
+        errors[field] = `"${field}" is not an allowed document field`;
+      }
+    });
+
+    // Validate encTitle
+    if (!partial || payload.encTitle !== undefined) {
+      if (!payload.encTitle || typeof payload.encTitle !== 'object' || Array.isArray(payload.encTitle)) {
+        errors.encTitle = 'encTitle must be an encrypted envelope object';
+      } else {
+        const { v, iv, ct } = payload.encTitle;
+        if (typeof v !== 'string' || typeof iv !== 'string' || typeof ct !== 'string') {
+          errors.encTitle = 'encTitle must contain { v, iv, ct } string properties';
+        }
+      }
+    }
+
+    // Validate encContent
+    if (!partial || payload.encContent !== undefined) {
+      if (!payload.encContent || typeof payload.encContent !== 'object' || Array.isArray(payload.encContent)) {
+        errors.encContent = 'encContent must be an encrypted envelope object';
+      } else {
+        const { v, iv, ct } = payload.encContent;
+        if (typeof v !== 'string' || typeof iv !== 'string' || typeof ct !== 'string') {
+          errors.encContent = 'encContent must contain { v, iv, ct } string properties';
+        }
+      }
+    }
+
+    // Validate encIcon
+    if (payload.encIcon !== undefined && payload.encIcon !== null) {
+      if (typeof payload.encIcon !== 'object' || Array.isArray(payload.encIcon)) {
+        errors.encIcon = 'encIcon must be an encrypted envelope object';
+      } else {
+        const { v, iv, ct } = payload.encIcon;
+        if (typeof v !== 'string' || typeof iv !== 'string' || typeof ct !== 'string') {
+          errors.encIcon = 'encIcon must contain { v, iv, ct } string properties';
+        }
+      }
+    }
+
+    // Validate encDek
+    if (!partial || payload.encDek !== undefined) {
+      if (!payload.encDek || typeof payload.encDek !== 'object' || Array.isArray(payload.encDek)) {
+        errors.encDek = 'encDek must be an encrypted DEK envelope object';
+      } else {
+        const { wrappedDek, dekIv } = payload.encDek;
+        if (typeof wrappedDek !== 'string' || typeof dekIv !== 'string') {
+          errors.encDek = 'encDek must contain { wrappedDek, dekIv } string properties';
+        }
+      }
+    }
+
+    // Cover image validation
+    if (payload.coverImage !== undefined) {
+      if (typeof payload.coverImage !== 'string') {
+        errors.coverImage = 'Cover image must be a string';
+      } else if (payload.coverImage.length > 500) {
+        errors.coverImage = 'Cover image reference cannot exceed 500 characters';
+      }
+    }
+
+    // Revision validation
+    if (payload.revision !== undefined) {
+      if (typeof payload.revision !== 'number' || !Number.isInteger(payload.revision) || payload.revision < 0) {
+        errors.revision = 'Revision must be a non-negative integer';
+      }
+    }
+
+    return errors;
+  }
+
+  // Plaintext mode
+  const allowedFields = new Set(['_id', 'title', 'icon', 'coverImage', 'content', 'revision', 'isEncrypted']);
 
   // Reject unknown fields
   Object.keys(payload).forEach((field) => {

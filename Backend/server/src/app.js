@@ -20,6 +20,7 @@ import config from './config/config.js';
 
 import documentRoutes from './routes/document.routes.js';
 import authRoutes from './routes/auth.routes.js';
+import vaultRoutes from './routes/vault.routes.js';
 import { originGuard } from './middleware/originGuard.middleware.js';
 import { authRateLimiter, apiRateLimiter } from './middleware/rateLimiter.middleware.js';
 
@@ -59,7 +60,8 @@ app.use(
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-App-Request'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-App-Request', 'If-Match'],
+    exposedHeaders: ['ETag'],
   })
 );
 
@@ -94,6 +96,9 @@ app.use('/api/auth', authRateLimiter, authRoutes);
 
 // ── 8. Document routes (general rate limit: 200 req / 15 min) ─────────────────
 app.use('/api/documents', apiRateLimiter, documentRoutes);
+
+// ── 9. Vault routes (E2EE key metadata) ───────────────────────────────────────
+app.use('/api/vault', apiRateLimiter, vaultRoutes);
 
 // ── 9. 404 Handler ─────────────────────────────────────────────────────────────
 app.use((req, res) => {

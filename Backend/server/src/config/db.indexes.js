@@ -24,11 +24,12 @@ export const ensureIndexes = async () => {
       { name: 'idx_doc_id_userId', background: true }
     );
 
-    // 3. Text index: future full-text search on title (fast typeahead queries)
-    await Document.collection.createIndex(
-      { title: 'text' },
-      { name: 'idx_doc_title_text', background: true }
-    );
+    // 3. Drop legacy text index on title if present (E2EE zero-knowledge prevents plaintext indexing)
+    try {
+      await Document.collection.dropIndex('idx_doc_title_text');
+    } catch {
+      // Index does not exist or already dropped, safe to ignore
+    }
 
     // ─── User Collection Indexes ──────────────────────────────────────────────
 

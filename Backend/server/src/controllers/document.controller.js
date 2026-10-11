@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import Document from '../models/document.models.js';
+import User from '../models/user.models.js';
 import { validateDocumentInput } from '../utils/validation.js';
 import {
   getUserDocumentsPipeline,
@@ -24,7 +25,7 @@ const getAuthUserId = (req) => {
 
 /**
  * GET /api/documents
- * Returns all documents for the authenticated user (id, title, icon, updatedAt).
+ * Returns all documents for the authenticated user (id, title, icon, updatedAt, enc metadata).
  * Uses aggregation pipeline with compound (userId, updatedAt) index.
  */
 export const getAllDocuments = async (req, res) => {
@@ -68,6 +69,7 @@ export const getDocumentById = async (req, res) => {
       return res.status(404).json({ error: 'Document not found or access denied' });
     }
 
+    res.setHeader('ETag', `"${doc.revision ?? 0}"`);
     return res.status(200).json(doc);
   } catch (error) {
     console.error('Error fetching document by ID:', error.message);
@@ -78,6 +80,8 @@ export const getDocumentById = async (req, res) => {
 /**
  * POST /api/documents
  * Creates a new document for the authenticated user.
+ * Supports client-provided _id for E2EE AAD binding.
+ * Rejects plaintext documents if vault is enabled.
  */
 export const createDocument = async (req, res) => {
   try {
@@ -86,21 +90,47 @@ export const createDocument = async (req, res) => {
       return res.status(401).json({ error: 'User authentication required' });
     }
 
-    const { title, icon, coverImage, content } = req.body;
+    // Check if vault is enabled for this account
+    const user = await User.findById(userId, 'vault');
+    const isVaultEnabled = user?.vault?.isVaultEnabled === true;
+    if (isVaultEnabled && req.body.isEncrypted !== true) {
+      return res.status(400).json({
+        error: 'Plaintext document writes rejected: vault is enabled for this account',
+      });
+    }
 
     // Reject unknown top-level fields
-    const allowedFields = new Set(['title', 'icon', 'coverImage', 'content']);
+    const allowedFields = new Set([
+      '_id', 'title', 'icon', 'coverImage', 'content',
+      'isEncrypted', 'revision',
+      'encTitle', 'encIcon', 'encContent', 'encDek',
+    ]);
     const unknownField = Object.keys(req.body).find((f) => !allowedFields.has(f));
     if (unknownField) {
       return res.status(400).json({ error: `Field '${unknownField}' is not allowed` });
     }
 
-    const payload = {
-      title: title ?? 'Untitled',
-      icon: icon ?? '📝',
-      coverImage: coverImage ?? '',
-      content: content ?? [],
-    };
+    const isEncrypted = req.body.isEncrypted === true;
+    const payload = isEncrypted
+      ? {
+          _id: req.body._id,
+          isEncrypted: true,
+          revision: req.body.revision ?? 0,
+          coverImage: req.body.coverImage ?? '',
+          encTitle: req.body.encTitle,
+          encIcon: req.body.encIcon,
+          encContent: req.body.encContent,
+          encDek: req.body.encDek,
+        }
+      : {
+          _id: req.body._id,
+          isEncrypted: false,
+          revision: req.body.revision ?? 0,
+          title: req.body.title ?? 'Untitled',
+          icon: req.body.icon ?? '📝',
+          coverImage: req.body.coverImage ?? '',
+          content: req.body.content ?? [],
+        };
 
     const validationErrors = validateDocumentInput(payload);
     if (Object.keys(validationErrors).length > 0) {
@@ -115,14 +145,42 @@ export const createDocument = async (req, res) => {
       });
     }
 
-    const newDoc = await Document.create({
-      userId,
-      title: payload.title.trim(),
-      icon: payload.icon,
-      coverImage: payload.coverImage,
-      content: payload.content,
-    });
+    // Use client-generated ID if provided (for E2EE AAD binding), else new ObjectId
+    let docId = new mongoose.Types.ObjectId();
+    if (payload._id && isValidObjectId(payload._id)) {
+      docId = new mongoose.Types.ObjectId(payload._id);
+    }
 
+    let newDoc;
+    if (isEncrypted) {
+      newDoc = await Document.create({
+        _id: docId,
+        userId,
+        isEncrypted: true,
+        revision: 0,
+        encTitle: payload.encTitle,
+        encIcon: payload.encIcon || null,
+        encContent: payload.encContent,
+        encDek: payload.encDek,
+        title: '[Encrypted]',
+        icon: '🔒',
+        coverImage: payload.coverImage,
+        content: [],
+      });
+    } else {
+      newDoc = await Document.create({
+        _id: docId,
+        userId,
+        isEncrypted: false,
+        revision: 0,
+        title: payload.title.trim(),
+        icon: payload.icon,
+        coverImage: payload.coverImage,
+        content: payload.content,
+      });
+    }
+
+    res.setHeader('ETag', `"${newDoc.revision ?? 0}"`);
     return res.status(201).json(newDoc);
   } catch (error) {
     console.error('Error creating document:', error.message);
@@ -133,6 +191,7 @@ export const createDocument = async (req, res) => {
 /**
  * PUT /api/documents/:id
  * Updates a document strictly isolated to its owner.
+ * Performs atomic revision increments; returns 409 Conflict on revision mismatch.
  */
 export const updateDocument = async (req, res) => {
   try {
@@ -146,6 +205,15 @@ export const updateDocument = async (req, res) => {
       return res.status(400).json({ error: 'Invalid document ID format' });
     }
 
+    // Check if vault is enabled for this account
+    const user = await User.findById(userId, 'vault');
+    const isVaultEnabled = user?.vault?.isVaultEnabled === true;
+    if (isVaultEnabled && req.body.isEncrypted !== true) {
+      return res.status(400).json({
+        error: 'Plaintext document writes rejected: vault is enabled for this account',
+      });
+    }
+
     // Strip out any attempt to override ownership or internal fields
     const updates = { ...req.body };
     delete updates.userId;
@@ -155,7 +223,11 @@ export const updateDocument = async (req, res) => {
     delete updates.updatedAt;
 
     // Reject unknown fields
-    const allowedFields = new Set(['title', 'icon', 'coverImage', 'content']);
+    const allowedFields = new Set([
+      'title', 'icon', 'coverImage', 'content',
+      'isEncrypted', 'revision',
+      'encTitle', 'encIcon', 'encContent', 'encDek',
+    ]);
     const unknownField = Object.keys(updates).find((f) => !allowedFields.has(f));
     if (unknownField) {
       return res.status(400).json({ error: `Field '${unknownField}' is not allowed` });
@@ -166,23 +238,47 @@ export const updateDocument = async (req, res) => {
       return res.status(400).json({ error: 'Invalid document data', fields: validationErrors });
     }
 
-    if (updates.title !== undefined) {
+    if (updates.title !== undefined && !updates.isEncrypted) {
       updates.title = updates.title.trim();
       if (updates.title.length === 0) {
         return res.status(400).json({ error: 'Title cannot be empty' });
       }
     }
 
+    // Parse expected revision from If-Match header or body.revision
+    const rawRevision = req.headers['if-match'] ?? updates.revision;
+    delete updates.revision; // revision is managed atomically via $inc
+
+    const hasExpectedRevision = rawRevision !== undefined && rawRevision !== null && rawRevision !== '';
+    const expectedRevision = hasExpectedRevision
+      ? parseInt(String(rawRevision).replace(/["']/g, ''), 10)
+      : null;
+
+    const updateFilter = { _id: id, userId };
+    if (expectedRevision !== null && !isNaN(expectedRevision)) {
+      updateFilter.revision = expectedRevision;
+    }
+
     const updatedDoc = await Document.findOneAndUpdate(
-      { _id: id, userId },
-      { $set: updates },
+      updateFilter,
+      { $set: updates, $inc: { revision: 1 } },
       { returnDocument: 'after', runValidators: true }
     );
 
     if (!updatedDoc) {
+      if (expectedRevision !== null && !isNaN(expectedRevision)) {
+        const existing = await Document.findOne({ _id: id, userId });
+        if (existing) {
+          return res.status(409).json({
+            error: 'Conflict: Document revision mismatch',
+            currentRevision: existing.revision,
+          });
+        }
+      }
       return res.status(404).json({ error: 'Document not found or access denied' });
     }
 
+    res.setHeader('ETag', `"${updatedDoc.revision}"`);
     return res.status(200).json(updatedDoc);
   } catch (error) {
     console.error('Error updating document:', error.message);

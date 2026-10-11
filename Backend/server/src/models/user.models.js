@@ -30,6 +30,37 @@ const sessionSchema = new mongoose.Schema(
 // Maximum concurrent sessions per user (one per browser/device)
 const MAX_SESSIONS = 10;
 
+// ── Vault Subdocument Schemas ─────────────────────────────────────────────────
+
+const vaultBackupSchema = new mongoose.Schema(
+  {
+    salt:                 { type: String, required: true },
+    kdfParams:            { type: mongoose.Schema.Types.Mixed, required: true },
+    wrappedMasterKey:     { type: String, required: true },
+    wrappedMasterKeyIv:   { type: String, required: true },
+    recoveryWrappedKey:   { type: String, required: true },
+    recoveryWrappedKeyIv: { type: String, required: true },
+    replacedAt:           { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
+
+const vaultSchema = new mongoose.Schema(
+  {
+    isVaultEnabled:       { type: Boolean, default: false },
+    salt:                 { type: String, default: null },
+    kdfParams:            { type: mongoose.Schema.Types.Mixed, default: null },
+    wrappedMasterKey:     { type: String, default: null },
+    wrappedMasterKeyIv:   { type: String, default: null },
+    recoveryWrappedKey:   { type: String, default: null },
+    recoveryWrappedKeyIv: { type: String, default: null },
+    setupAt:              { type: Date, default: null },
+    updatedAt:            { type: Date, default: null },
+    previousKeys:         { type: [vaultBackupSchema], default: [] },
+  },
+  { _id: false }
+);
+
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -93,6 +124,12 @@ const userSchema = new mongoose.Schema(
     // Remove these after one deploy cycle once all tokens have rotated.
     refreshTokenHash:   { type: String, default: null },
     refreshTokenFamily: { type: String, default: null },
+
+    // ── E2EE Vault Metadata ─────────────────────────────────────────────────────
+    vault: {
+      type: vaultSchema,
+      default: () => ({ isVaultEnabled: false }),
+    },
   },
   {
     timestamps: true,
@@ -152,6 +189,8 @@ userSchema.methods.toJSON = function () {
   delete userObject.refreshTokenFamily;
   delete userObject.emailVerificationToken;
   delete userObject.emailVerificationExpires;
+  userObject.isVaultEnabled = this.vault?.isVaultEnabled || false;
+  delete userObject.vault;
   return userObject;
 };
 

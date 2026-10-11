@@ -22,13 +22,20 @@ export const getUserDocumentsPipeline = (userId) => [
   {
     $sort: { updatedAt: -1 },
   },
-  // Stage 3: Project only sidebar-needed fields (reduces data transfer)
+  // Stage 3: Project sidebar/listing fields (supports both plaintext & E2EE)
   {
     $project: {
       _id: 1,
       title: 1,
       icon: 1,
+      coverImage: 1,
       updatedAt: 1,
+      createdAt: 1,
+      revision: 1,
+      isEncrypted: 1,
+      encTitle: 1,
+      encIcon: 1,
+      encDek: 1,
     },
   },
 ];

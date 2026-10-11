@@ -2,7 +2,11 @@ import { body } from 'express-validator';
 
 // ─── Allowed value sets ───────────────────────────────────────────────────────
 
-const ALLOWED_FIELDS = new Set(['title', 'icon', 'coverImage', 'content']);
+const ALLOWED_FIELDS = new Set([
+  '_id', 'title', 'icon', 'coverImage', 'content',
+  'isEncrypted', 'revision',
+  'encTitle', 'encIcon', 'encContent', 'encDek',
+]);
 
 const BLOCK_TYPES = new Set([
   'paragraph', 'h1', 'h2', 'h3', 'heading',
@@ -33,9 +37,14 @@ const documentFields = body().custom((value) => {
 
 const title = body('title')
   .optional({ nullable: true })
-  .isString().withMessage('Title must be a string').bail()
-  .trim()
-  .isLength({ min: 1, max: 200 }).withMessage('Title must be between 1 and 200 characters');
+  .custom((val, { req }) => {
+    if (req.body?.isEncrypted) return true;
+    if (typeof val !== 'string') throw new Error('Title must be a string');
+    if (val.trim().length < 1 || val.trim().length > 200) {
+      throw new Error('Title must be between 1 and 200 characters');
+    }
+    return true;
+  });
 
 const icon = body('icon')
   .optional({ nullable: true })
@@ -49,8 +58,11 @@ const coverImage = body('coverImage')
 
 const content = body('content')
   .optional({ nullable: true })
-  .isArray({ max: 500 }).withMessage('Content must be an array with at most 500 blocks').bail()
-  .custom((blocks) => {
+  .custom((blocks, { req }) => {
+    if (req.body?.isEncrypted) return true;
+    if (!blocks) return true;
+    if (!Array.isArray(blocks)) throw new Error('Content must be an array');
+    if (blocks.length > 500) throw new Error('Content must be an array with at most 500 blocks');
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
       if (!block || typeof block !== 'object' || Array.isArray(block)) {
@@ -105,7 +117,80 @@ const content = body('content')
     return true;
   });
 
+const encTitle = body('encTitle')
+  .optional({ nullable: true })
+  .custom((val, { req }) => {
+    if (!req.body?.isEncrypted) return true;
+    if (!val || typeof val !== 'object' || Array.isArray(val)) {
+      throw new Error('encTitle must be an object');
+    }
+    if (typeof val.v !== 'string' || typeof val.iv !== 'string' || typeof val.ct !== 'string') {
+      throw new Error('encTitle must contain { v, iv, ct } strings');
+    }
+    return true;
+  });
+
+const encContent = body('encContent')
+  .optional({ nullable: true })
+  .custom((val, { req }) => {
+    if (!req.body?.isEncrypted) return true;
+    if (!val || typeof val !== 'object' || Array.isArray(val)) {
+      throw new Error('encContent must be an object');
+    }
+    if (typeof val.v !== 'string' || typeof val.iv !== 'string' || typeof val.ct !== 'string') {
+      throw new Error('encContent must contain { v, iv, ct } strings');
+    }
+    return true;
+  });
+
+const encIcon = body('encIcon')
+  .optional({ nullable: true })
+  .custom((val, { req }) => {
+    if (!req.body?.isEncrypted || !val) return true;
+    if (typeof val !== 'object' || Array.isArray(val)) {
+      throw new Error('encIcon must be an object');
+    }
+    if (typeof val.v !== 'string' || typeof val.iv !== 'string' || typeof val.ct !== 'string') {
+      throw new Error('encIcon must contain { v, iv, ct } strings');
+    }
+    return true;
+  });
+
+const encDek = body('encDek')
+  .optional({ nullable: true })
+  .custom((val, { req }) => {
+    if (!req.body?.isEncrypted) return true;
+    if (!val || typeof val !== 'object' || Array.isArray(val)) {
+      throw new Error('encDek must be an object');
+    }
+    if (typeof val.wrappedDek !== 'string' || typeof val.dekIv !== 'string') {
+      throw new Error('encDek must contain { wrappedDek, dekIv } strings');
+    }
+    return true;
+  });
+
 // ─── Validator chains ─────────────────────────────────────────────────────────
 
-export const createDocumentValidator = [documentFields, title, icon, coverImage, content];
-export const updateDocumentValidator = [documentFields, title, icon, coverImage, content];
+export const createDocumentValidator = [
+  documentFields,
+  title,
+  icon,
+  coverImage,
+  content,
+  encTitle,
+  encIcon,
+  encContent,
+  encDek,
+];
+
+export const updateDocumentValidator = [
+  documentFields,
+  title,
+  icon,
+  coverImage,
+  content,
+  encTitle,
+  encIcon,
+  encContent,
+  encDek,
+];
