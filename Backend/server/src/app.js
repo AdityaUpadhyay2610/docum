@@ -23,6 +23,9 @@ import authRoutes from './routes/auth.routes.js';
 import { originGuard } from './middleware/originGuard.middleware.js';
 import { authRateLimiter, apiRateLimiter } from './middleware/rateLimiter.middleware.js';
 
+import { isOriginAllowed } from './config/allowedOrigins.js';
+import mongoSanitize from './middleware/mongoSanitize.middleware.js';
+
 const app = express();
 
 // ── 1. Helmet – secure response headers ────────────────────────────────────────
@@ -37,20 +40,6 @@ app.use(
 app.use(cookieParser());
 
 // ── 3. CORS – strict whitelist ─────────────────────────────────────────────────
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:5174',
-  'http://127.0.0.1:5173',
-  'http://127.0.0.1:5174',
-];
-
-if (config.clientUrl) {
-  config.clientUrl.split(',').forEach((url) => {
-    const trimmed = url.trim().replace(/\/+$/, '');
-    if (trimmed) allowedOrigins.push(trimmed);
-  });
-}
-
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -63,24 +52,9 @@ app.use(
         return callback(null, true);
       }
 
-      const normalizedOrigin = origin.replace(/\/+$/, '');
-      let isAllowed = allowedOrigins.some(
-        (allowed) => allowed.replace(/\/+$/, '') === normalizedOrigin
-      );
-
-      // Automatically allow Vercel preview domains
-      if (!isAllowed) {
-        try {
-          const parsed = new URL(origin);
-          if (parsed.hostname.endsWith('.vercel.app')) {
-            isAllowed = true;
-          }
-        } catch (_) {
-          // ignore invalid origin URLs
-        }
+      if (isOriginAllowed(origin)) {
+        return callback(null, true);
       }
-
-      if (isAllowed) return callback(null, true);
       return callback(new Error(`Not allowed by CORS: ${origin}`));
     },
     credentials: true,
@@ -89,13 +63,18 @@ app.use(
   })
 );
 
-// ── 4. Origin Guard – block Postman / curl / headless clients ─────────────────
+// ── 4. Origin Guard – block unauthorized clients ──────────────────────────────
 // Applied to all /api/* routes; skips health check
 app.use('/api', originGuard);
 
-// ── 5. Body parsers – size-limited ────────────────────────────────────────────
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// ── 5. Body parsers – size-limited (10mb for document routes, 512kb for all others)
+app.use('/api/documents', express.json({ limit: '10mb' }));
+app.use('/api/documents', express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '512kb' }));
+app.use(express.urlencoded({ extended: true, limit: '512kb' }));
+
+// ── 5.1 NoSQL Injection Protection ────────────────────────────────────────────
+app.use(mongoSanitize);
 
 // ── 6. Health Check (internal / ops use only, not behind origin guard) ─────────
 // Returns minimal info – no sensitive uptime or version data in production
@@ -123,9 +102,12 @@ app.use((req, res) => {
 
 // ── 10. Global Error Handler ───────────────────────────────────────────────────
 app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
+  if (err.message && (err.message.startsWith('Not allowed by CORS') || err.message.includes('CORS'))) {
+    return res.status(403).json({ error: 'Forbidden: request origin is not allowed by CORS.' });
+  }
   // Suppress stack traces in production
   if (!config.isProd) {
-    console.error('Unhandled server error:', err);
+    console.error('Unhandled server error:', err.message);
   } else {
     console.error(`[${new Date().toISOString()}] ${err.message}`);
   }

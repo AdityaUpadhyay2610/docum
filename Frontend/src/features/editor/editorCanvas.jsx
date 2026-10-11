@@ -1,10 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Plus } from 'lucide-react';
 import SlashMenu from './slashMenu';
-import CodeBlock from './codeBlock';
-import TableBlock from './tableBlock';
-import BoardBlock from './boardBlock';
-import CalloutBlock from './blocks/CalloutBlock';
+import { CodeBlock, TableBlock, BoardBlock, CalloutBlock } from './blocks';
 import { exportToDocx } from '../../services/docxExport';
 import { useEditorSettings, PAGE_SIZES, PAGE_THEMES } from '../../context/EditorSettingsContext';
 

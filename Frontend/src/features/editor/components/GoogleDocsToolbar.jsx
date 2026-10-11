@@ -24,7 +24,6 @@ import {
   Loader2,
   CheckCircle2,
   SlidersHorizontal,
-  FileText,
   Info,
   Keyboard,
   AlignLeft,

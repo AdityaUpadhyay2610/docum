@@ -39,7 +39,7 @@ export const getAllDocuments = async (req, res) => {
 
     return res.status(200).json(docs);
   } catch (error) {
-    console.error('Error fetching user documents:', error);
+    console.error('Error fetching user documents:', error.message);
     return res.status(500).json({ error: 'Failed to fetch documents' });
   }
 };
@@ -70,7 +70,7 @@ export const getDocumentById = async (req, res) => {
 
     return res.status(200).json(doc);
   } catch (error) {
-    console.error('Error fetching document by ID:', error);
+    console.error('Error fetching document by ID:', error.message);
     return res.status(500).json({ error: 'Failed to fetch document' });
   }
 };
@@ -107,6 +107,14 @@ export const createDocument = async (req, res) => {
       return res.status(400).json({ error: 'Invalid document data', fields: validationErrors });
     }
 
+    // Enforce per-user document count limit (max 100 docs)
+    const count = await Document.countDocuments({ userId });
+    if (count >= 100) {
+      return res.status(403).json({
+        error: 'Document limit reached. You can have a maximum of 100 documents.',
+      });
+    }
+
     const newDoc = await Document.create({
       userId,
       title: payload.title.trim(),
@@ -117,7 +125,7 @@ export const createDocument = async (req, res) => {
 
     return res.status(201).json(newDoc);
   } catch (error) {
-    console.error('Error creating document:', error);
+    console.error('Error creating document:', error.message);
     return res.status(500).json({ error: 'Failed to create document' });
   }
 };
@@ -168,7 +176,7 @@ export const updateDocument = async (req, res) => {
     const updatedDoc = await Document.findOneAndUpdate(
       { _id: id, userId },
       { $set: updates },
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     );
 
     if (!updatedDoc) {
@@ -177,7 +185,7 @@ export const updateDocument = async (req, res) => {
 
     return res.status(200).json(updatedDoc);
   } catch (error) {
-    console.error('Error updating document:', error);
+    console.error('Error updating document:', error.message);
     if (error.name === 'ValidationError' || error.name === 'CastError') {
       return res.status(400).json({ error: 'Invalid document data', details: error.message });
     }
@@ -208,7 +216,7 @@ export const deleteDocument = async (req, res) => {
 
     return res.status(200).json({ message: 'Document deleted successfully', id });
   } catch (error) {
-    console.error('Error deleting document:', error);
+    console.error('Error deleting document:', error.message);
     return res.status(500).json({ error: 'Failed to delete document' });
   }
 };

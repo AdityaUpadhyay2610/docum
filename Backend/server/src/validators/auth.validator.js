@@ -40,15 +40,10 @@ export const googleAuthValidator = [
   body('credential')
     .exists({ checkFalsy: true }).withMessage('Google credential is required').bail()
     .isString().withMessage('Google credential must be a valid token string'),
-  body('password')
-    .exists({ checkFalsy: true }).withMessage('Password is required for app login security').bail()
-    .isLength({ min: 8, max: 128 }).withMessage('Password must be between 8 and 128 characters'),
-  body('confirmPassword')
-    .optional()
-    .custom((value, { req }) => {
-      if (value && value !== req.body.password) {
-        throw new Error('Passwords do not match');
-      }
-      return true;
-    }),
+];
+
+export const verifyEmailValidator = [
+  body('token')
+    .exists({ checkFalsy: true }).withMessage('Verification token is required').bail()
+    .isString().withMessage('Verification token must be a string'),
 ];

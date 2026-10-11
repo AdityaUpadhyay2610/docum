@@ -20,7 +20,7 @@ const userSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: [true, 'Password is required'],
+      default: null,
       minlength: [8, 'Password must be at least 8 characters'],
       maxlength: [128, 'Password cannot exceed 128 characters'],
     },
@@ -38,7 +38,23 @@ const userSchema = new mongoose.Schema(
       enum: ['local', 'google'],
       default: 'local',
     },
-    refreshToken: {
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    emailVerificationToken: {
+      type: String,
+      default: null,
+    },
+    emailVerificationExpires: {
+      type: Date,
+      default: null,
+    },
+    refreshTokenHash: {
+      type: String,
+      default: null,
+    },
+    refreshTokenFamily: {
       type: String,
       default: null,
     },
@@ -48,11 +64,14 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// Remove password and refreshToken from serialized outputs
+// Remove sensitive fields from serialized outputs
 userSchema.methods.toJSON = function () {
   const userObject = this.toObject();
   delete userObject.password;
-  delete userObject.refreshToken;
+  delete userObject.refreshTokenHash;
+  delete userObject.refreshTokenFamily;
+  delete userObject.emailVerificationToken;
+  delete userObject.emailVerificationExpires;
   return userObject;
 };
 

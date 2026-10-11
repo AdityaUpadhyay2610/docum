@@ -15,22 +15,6 @@
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Read a required Vite env var. Throws at startup if missing.
- * @param {string} key - The VITE_ prefixed env var name.
- * @returns {string}
- */
-function required(key) {
-  const value = import.meta.env[key];
-  if (!value || String(value).trim() === '') {
-    throw new Error(
-      `[Config] Missing required environment variable: "${key}". ` +
-      `Set it in your .env file (e.g. ${key}=https://example.com).`
-    );
-  }
-  return String(value).trim();
-}
-
-/**
  * Read an optional Vite env var with a fallback.
  * @param {string} key - The VITE_ prefixed env var name.
  * @param {string} fallback - Default value if the var is not set.

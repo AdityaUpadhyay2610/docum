@@ -66,7 +66,13 @@ const config = {
 
   // ── CORS & Client ────────────────────────────────────────────────────────────
   // Comma-separated list of allowed frontend origins (e.g. Vercel preview URL)
-  clientUrl: optional('CLIENT_URL', ''),
+  clientUrl: (() => {
+    const val = optional('CLIENT_URL', '');
+    if (optional('NODE_ENV', 'development') === 'production' && !val) {
+      throw new Error('FATAL: Environment variable "CLIENT_URL" must be set in production.');
+    }
+    return val;
+  })(),
 
   // ── Origin Guard shared secret ───────────────────────────────────────────────
   // The frontend sends this in the X-App-Request header on every request.
