@@ -1,5 +1,35 @@
 import mongoose from 'mongoose';
 
+/**
+ * Per-device session sub-document.
+ *
+ * Each login or Google sign-in creates one session slot (up to MAX_SESSIONS).
+ * When the limit is reached the oldest session is evicted.
+ *
+ * Fields:
+ *   hash       – SHA-256 of the current refresh token for this slot
+ *   family     – UUID shared across rotations; used to detect token reuse
+ *   deviceHint – Optional user-agent / IP fragment stored for display (not auth)
+ *   issuedAt   – When this slot was last refreshed
+ *   graceUntil – If set, the PREVIOUS hash is accepted until this timestamp
+ *                (prevents dual-tab logouts when both tabs race to refresh)
+ *   prevHash   – The hash accepted during the grace window
+ */
+const sessionSchema = new mongoose.Schema(
+  {
+    hash:       { type: String, required: true },
+    family:     { type: String, required: true },
+    deviceHint: { type: String, default: '' },
+    issuedAt:   { type: Date,   default: Date.now },
+    graceUntil: { type: Date,   default: null },
+    prevHash:   { type: String, default: null },
+  },
+  { _id: true }
+);
+
+// Maximum concurrent sessions per user (one per browser/device)
+const MAX_SESSIONS = 10;
+
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -50,24 +80,74 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-    refreshTokenHash: {
-      type: String,
-      default: null,
+
+    // ── Per-device sessions ─────────────────────────────────────────────────────
+    // Replaces the single refreshTokenHash / refreshTokenFamily fields.
+    // Each login creates a new slot; MAX_SESSIONS slots per user.
+    sessions: {
+      type: [sessionSchema],
+      default: [],
     },
-    refreshTokenFamily: {
-      type: String,
-      default: null,
-    },
+
+    // ── Legacy single-session fields (kept for safe migration, not used by new code) ──
+    // Remove these after one deploy cycle once all tokens have rotated.
+    refreshTokenHash:   { type: String, default: null },
+    refreshTokenFamily: { type: String, default: null },
   },
   {
     timestamps: true,
   }
 );
 
+// ── Static helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * Add a new session slot for a user, evicting the oldest if MAX_SESSIONS is reached.
+ * Call this after generating a new refresh token.
+ *
+ * @param {mongoose.Document} user
+ * @param {{ hash: string, family: string, deviceHint?: string }} opts
+ */
+userSchema.statics.addSession = function (user, { hash, family, deviceHint = '' }) {
+  user.sessions.push({ hash, family, deviceHint, issuedAt: new Date() });
+  if (user.sessions.length > MAX_SESSIONS) {
+    // Evict oldest
+    user.sessions.splice(0, user.sessions.length - MAX_SESSIONS);
+  }
+};
+
+/**
+ * Find the session slot matching either the current hash or the grace-window prevHash.
+ *
+ * @param {mongoose.Document} user
+ * @param {string} incomingHash – SHA-256 of the incoming refresh token
+ * @returns {{ session: object|null, isGrace: boolean }}
+ */
+userSchema.statics.findSession = function (user, incomingHash) {
+  const now = new Date();
+  for (const session of user.sessions) {
+    if (session.hash === incomingHash) {
+      return { session, isGrace: false };
+    }
+    // Grace window: accept the previous hash for up to GRACE_SECONDS after rotation
+    if (
+      session.prevHash === incomingHash &&
+      session.graceUntil &&
+      session.graceUntil > now
+    ) {
+      return { session, isGrace: true };
+    }
+  }
+  return { session: null, isGrace: false };
+};
+
+// ── Serialization guard ────────────────────────────────────────────────────────
+
 // Remove sensitive fields from serialized outputs
 userSchema.methods.toJSON = function () {
   const userObject = this.toObject();
   delete userObject.password;
+  delete userObject.sessions;
   delete userObject.refreshTokenHash;
   delete userObject.refreshTokenFamily;
   delete userObject.emailVerificationToken;

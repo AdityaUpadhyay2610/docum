@@ -3,11 +3,16 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 import User from '../models/user.models.js';
+import { sendVerificationEmail } from '../services/email.service.js';
 import { validateAuthInput } from '../utils/validation.js';
 import { penaliseFailedLogin, clearLoginBuckets } from '../middleware/tokenBucketGuard.middleware.js';
 import config from '../config/config.js';
 
 const googleClient = new OAuth2Client();
+
+// Seconds the PREVIOUS refresh token hash is still accepted after rotation.
+// Prevents two-tab logouts when both tabs race to call /auth/refresh.
+const GRACE_SECONDS = 10;
 
 // Cookie configuration for maximum security (HttpOnly + SameSite + Secure in production)
 const COOKIE_OPTIONS = {
@@ -45,6 +50,15 @@ const generateRefreshToken = (user) => {
     config.jwtRefreshSecret,
     { expiresIn: config.jwtRefreshExpiresIn }
   );
+};
+
+/**
+ * Extract a brief device hint from the request for session labelling only.
+ * Never used for authentication decisions.
+ */
+const deviceHintFrom = (req) => {
+  const ua = req.headers['user-agent'] || '';
+  return ua.slice(0, 80); // trim to 80 chars
 };
 
 // Helper to verify Google ID token via google-auth-library OAuth2Client
@@ -97,7 +111,7 @@ export const register = async (req, res) => {
     // High security: 12 salt rounds
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Email verification token for password accounts
+    // Email verification token: store hashed, send raw only via email (never in API response)
     const rawVerificationToken = crypto.randomBytes(32).toString('hex');
     const hashedVerificationToken = hashToken(rawVerificationToken);
 
@@ -114,15 +128,27 @@ export const register = async (req, res) => {
     const refreshToken = generateRefreshToken(user);
     const family = crypto.randomUUID();
 
-    user.refreshTokenHash = hashToken(refreshToken);
-    user.refreshTokenFamily = family;
+    User.addSession(user, {
+      hash: hashToken(refreshToken),
+      family,
+      deviceHint: deviceHintFrom(req),
+    });
     await user.save();
 
     // Set secure HttpOnly cookie for refresh token (NEVER exposed to client JS)
     res.cookie('refreshToken', refreshToken, COOKIE_OPTIONS);
 
+    // Send verification email; token goes only into the email, NOT the response body
+    sendVerificationEmail({
+      to: normalizedEmail,
+      name: user.name,
+      rawToken: rawVerificationToken,
+    }).catch((err) => {
+      console.error('[Register] Failed to send verification email:', err.message);
+    });
+
     return res.status(201).json({
-      message: 'Registration successful. Please verify your email before linking accounts.',
+      message: 'Registration successful. A verification email has been sent. Please verify your email before linking accounts.',
       user: {
         id: user._id,
         name: user.name,
@@ -131,7 +157,8 @@ export const register = async (req, res) => {
         isEmailVerified: user.isEmailVerified,
       },
       accessToken,
-      verificationToken: rawVerificationToken,
+      // NOTE: verificationToken is intentionally omitted from the response.
+      // The token is delivered only via email to prevent token exposure in API logs.
     });
   } catch (error) {
     console.error('Registration error:', error.message);
@@ -230,10 +257,13 @@ export const googleAuth = async (req, res) => {
 
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
-    const family = user.refreshTokenFamily || crypto.randomUUID();
+    const family = crypto.randomUUID();
 
-    user.refreshTokenHash = hashToken(refreshToken);
-    user.refreshTokenFamily = family;
+    User.addSession(user, {
+      hash: hashToken(refreshToken),
+      family,
+      deviceHint: deviceHintFrom(req),
+    });
     await user.save();
 
     res.cookie('refreshToken', refreshToken, COOKIE_OPTIONS);
@@ -291,8 +321,11 @@ export const login = async (req, res) => {
     const refreshToken = generateRefreshToken(user);
     const family = crypto.randomUUID();
 
-    user.refreshTokenHash = hashToken(refreshToken);
-    user.refreshTokenFamily = family;
+    User.addSession(user, {
+      hash: hashToken(refreshToken),
+      family,
+      deviceHint: deviceHintFrom(req),
+    });
     await user.save();
 
     res.cookie('refreshToken', refreshToken, COOKIE_OPTIONS);
@@ -333,38 +366,51 @@ export const refreshAccessToken = async (req, res) => {
     }
 
     const user = await User.findById(decoded.userId);
-    const incomingHash = hashToken(refreshToken);
-
-    // Reuse detection: Token family exists but hash does not match (already rotated/replayed token)
-    if (!user || !user.refreshTokenHash) {
+    if (!user) {
       res.clearCookie('refreshToken', COOKIE_OPTIONS);
       return res.status(401).json({ error: 'Session is no longer valid. Please log in again.', code: 'SESSION_REVOKED' });
     }
 
-    if (user.refreshTokenHash !== incomingHash) {
-      // Possible replay attack: revoke entire family immediately
-      user.refreshTokenHash = null;
-      user.refreshTokenFamily = null;
+    const incomingHash = hashToken(refreshToken);
+    const { session, isGrace } = User.findSession(user, incomingHash);
+
+    if (!session) {
+      // Hash matches NO known session and NO grace window → possible replay attack.
+      // Check whether any session shares a family with the decoded jti's family.
+      // We don't have the family in the JWT, so we revoke all sessions as a safety measure.
+      console.warn(`[Auth] Token reuse / unknown hash detected for user ${decoded.userId}. Revoking all sessions.`);
+      user.sessions = [];
       await user.save();
       res.clearCookie('refreshToken', COOKIE_OPTIONS);
       return res.status(401).json({
-        error: 'Security alert: Token reuse detected. Session revoked.',
+        error: 'Security alert: Token reuse detected. All sessions revoked.',
         code: 'TOKEN_REUSE_DETECTED',
       });
     }
 
-    // Generate new access token and rotate refresh token (preserve family)
+    if (isGrace) {
+      // The token was already rotated but we're within the grace window.
+      // Respond with the SAME new access token without rotating again.
+      // (The session already has the latest hash stored from the first rotation.)
+      const newAccessToken = generateAccessToken(user);
+      // Do NOT rotate the refresh cookie – the new cookie was already set in the winning request.
+      return res.status(200).json({ accessToken: newAccessToken });
+    }
+
+    // Normal rotation: generate new tokens, set grace window on current session
     const newAccessToken = generateAccessToken(user);
     const newRefreshToken = generateRefreshToken(user);
+    const newHash = hashToken(newRefreshToken);
 
-    user.refreshTokenHash = hashToken(newRefreshToken);
+    session.prevHash   = session.hash;
+    session.hash       = newHash;
+    session.issuedAt   = new Date();
+    session.graceUntil = new Date(Date.now() + GRACE_SECONDS * 1000);
     await user.save();
 
     res.cookie('refreshToken', newRefreshToken, COOKIE_OPTIONS);
 
-    return res.status(200).json({
-      accessToken: newAccessToken,
-    });
+    return res.status(200).json({ accessToken: newAccessToken });
   } catch (error) {
     console.error('Token refresh error:', error.message);
     return res.status(500).json({ error: 'Failed to refresh token' });
@@ -377,10 +423,14 @@ export const logout = async (req, res) => {
     const refreshToken = req.cookies?.refreshToken;
     if (refreshToken) {
       const hashed = hashToken(refreshToken);
-      await User.findOneAndUpdate(
-        { refreshTokenHash: hashed },
-        { $set: { refreshTokenHash: null, refreshTokenFamily: null } }
-      );
+      const user = await User.findOne({
+        'sessions.hash': hashed,
+      });
+      if (user) {
+        // Remove only the matching session slot (device-specific logout)
+        user.sessions = user.sessions.filter((s) => s.hash !== hashed);
+        await user.save();
+      }
     }
 
     res.clearCookie('refreshToken', COOKIE_OPTIONS);

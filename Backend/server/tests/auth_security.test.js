@@ -59,20 +59,30 @@ test('Email verification: account linking is rejected if email is not verified',
 
   assert.equal(regRes.status, 201);
   assert.equal(regRes.body.user.isEmailVerified, false);
-  const verificationToken = regRes.body.verificationToken;
-  assert.ok(verificationToken, 'Should receive verification token');
+  // verificationToken is intentionally NOT returned in the API response;
+  // it is delivered only via email. Fetch it from the DB for testing purposes.
+  assert.equal(regRes.body.verificationToken, undefined, 'Token must NOT appear in API response');
 
   // 2. An attempt to link an unverified account via Google should fail
-  // We can test this directly on the User model or mock payload
   const existingUser = await User.findOne({ email: 'unverified@example.com' });
   assert.equal(existingUser.isEmailVerified, false);
 
-  // 3. Verify email with token
+  // 3. Retrieve the raw verification token from DB (hashed); compute raw from known approach.
+  // In tests we grab the hashed value stored on the user, then call verify-email with a
+  // token that we derive by fetching the hashed token from DB and using a reverse-lookup.
+  // Easiest: directly set the field for testing since email delivery is mocked/skipped.
+  const rawToken = 'test-raw-token-for-unit-test';
+  const { hashToken } = await import('../src/controllers/auth.controller.js');
+  existingUser.emailVerificationToken = hashToken(rawToken);
+  existingUser.emailVerificationExpires = new Date(Date.now() + 60 * 60 * 1000);
+  await existingUser.save();
+
+  // 4. Verify email with token
   const verifyRes = await request(app)
     .post('/api/auth/verify-email')
     .set('Origin', 'http://localhost:5173')
     .send({
-      token: verificationToken,
+      token: rawToken,
     });
 
   assert.equal(verifyRes.status, 200);
@@ -105,7 +115,7 @@ test('CSRF on /auth/refresh and /auth/logout: rejects requests with invalid or m
   assert.equal(logoutNoOrigin.status, 403);
 });
 
-test('Refresh token rotation & reuse detection', async () => {
+test('Refresh token rotation & reuse detection (per-device sessions)', async () => {
   // 1. Login to get initial cookies
   const loginRes = await request(app)
     .post('/api/auth/login')
@@ -131,9 +141,26 @@ test('Refresh token rotation & reuse detection', async () => {
   assert.ok(refresh1Res.body.accessToken);
   const rotatedCookies = refresh1Res.headers['set-cookie'];
   const newRefreshCookie = rotatedCookies.find((c) => c.startsWith('refreshToken='));
-  assert.ok(newRefreshCookie);
+  assert.ok(newRefreshCookie, 'Rotated refresh cookie must be set');
 
-  // 3. Token reuse detection: attempting to reuse initialRefreshCookie
+  // 3a. The initial token should still be accepted within the grace window (simulates second tab)
+  const graceRes = await request(app)
+    .post('/api/auth/refresh')
+    .set('Origin', 'http://localhost:5173')
+    .set('Cookie', [initialRefreshCookie]);
+  // During grace window: either 200 (grace accepted) is valid
+  assert.ok([200].includes(graceRes.status), `Expected 200 during grace window, got ${graceRes.status}`);
+
+  // 3b. Wait for grace window to expire (GRACE_SECONDS = 10s in code, but we directly
+  // clear the graceUntil field in DB to simulate expiry)
+  const user = await User.findOne({ email: 'unverified@example.com' });
+  for (const session of user.sessions) {
+    session.graceUntil = new Date(0); // expired
+    session.prevHash = null;
+  }
+  await user.save();
+
+  // 3c. Now replay the initial token – grace expired → reuse detected → all sessions revoked
   const reuseRes = await request(app)
     .post('/api/auth/refresh')
     .set('Origin', 'http://localhost:5173')
@@ -142,7 +169,7 @@ test('Refresh token rotation & reuse detection', async () => {
   assert.equal(reuseRes.status, 401);
   assert.equal(reuseRes.body.code, 'TOKEN_REUSE_DETECTED');
 
-  // 4. Session family should now be revoked, so even newRefreshCookie is rejected
+  // 4. All sessions revoked – even the rotated cookie is now rejected
   const revokedRes = await request(app)
     .post('/api/auth/refresh')
     .set('Origin', 'http://localhost:5173')
