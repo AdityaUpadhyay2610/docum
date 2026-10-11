@@ -1,5 +1,6 @@
 import { Suspense, lazy } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { VaultProvider } from './context/VaultContext';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import { Loader2 } from 'lucide-react';
 
@@ -34,7 +35,9 @@ export default function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <AppContent />
+        <VaultProvider>
+          <AppContent />
+        </VaultProvider>
       </AuthProvider>
     </ErrorBoundary>
   );
