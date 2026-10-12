@@ -38,7 +38,13 @@ export function validateAuthData(
 }
 
 export function validateDocumentData(data, { partial = false } = {}) {
-  const allowedFields = ['title', 'icon', 'coverImage', 'content'];
+  if (data?.isEncrypted) {
+    const allowedEncFields = ['_id', 'title', 'icon', 'coverImage', 'content', 'isEncrypted', 'revision', 'encTitle', 'encIcon', 'encContent', 'encDek'];
+    const unknownField = Object.keys(data).find((field) => !allowedEncFields.includes(field));
+    if (unknownField) return `${unknownField} is not an allowed document field`;
+    return null;
+  }
+  const allowedFields = ['_id', 'title', 'icon', 'coverImage', 'content', 'revision', 'isEncrypted'];
   const unknownField = Object.keys(data).find((field) => !allowedFields.includes(field));
   if (unknownField) return `${unknownField} is not an allowed document field`;
   if (!partial || data.title !== undefined) {

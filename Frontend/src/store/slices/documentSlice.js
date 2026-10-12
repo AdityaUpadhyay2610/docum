@@ -97,6 +97,28 @@ const documentSlice = createSlice({
     clearError(state) {
       state.error = null;
     },
+
+    // --- E2EE Vault state ---
+    setVaultLocked(state, action) {
+      state.vaultLocked = action.payload;
+    },
+    clearDecryptedContent(state) {
+      state.vaultLocked = true;
+      if (state.activeDoc?.isEncrypted) {
+        state.activeDoc = null;
+      }
+      state.documents = state.documents.map((doc) => {
+        if (doc.isEncrypted) {
+          const { _dek, ...rest } = doc; // eslint-disable-line no-unused-vars
+          return {
+            ...rest,
+            title: '[Encrypted]',
+            icon: '🔒',
+          };
+        }
+        return doc;
+      });
+    },
   },
 });
 
@@ -115,6 +137,8 @@ export const {
   setSaveStatus,
   setActiveBlockId,
   clearError,
+  setVaultLocked,
+  clearDecryptedContent,
 } = documentSlice.actions;
 
 export default documentSlice.reducer;

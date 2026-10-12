@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import documentServices from '../../../services/documentServices';
+import { useVault } from '../../../context/VaultContext';
 
 /**
  * Custom hook for handling debounced auto-saving with state management
@@ -9,7 +10,8 @@ import documentServices from '../../../services/documentServices';
  * @param {boolean} isGuest - Flag whether user is in guest mode (skips DB updates)
  */
 export function useAutoSave(activeDoc, onDocumentUpdated, debounceMs = 600, isGuest = false) {
-  const [saveStatus, setSaveStatus] = useState(isGuest ? 'guest' : 'saved'); // 'saved' | 'saving' | 'error' | 'guest'
+  const { masterKey } = useVault();
+  const [saveStatus, setSaveStatus] = useState(isGuest ? 'guest' : 'saved'); // 'saved' | 'saving' | 'error' | 'guest' | 'conflict'
   const pendingChangesRef = useRef({});
   const timerRef = useRef(null);
   const activeDocIdRef = useRef(activeDoc?._id || activeDoc?.id);
@@ -50,17 +52,35 @@ export function useAutoSave(activeDoc, onDocumentUpdated, debounceMs = 600, isGu
       if (!docId || Object.keys(updates).length === 0) return;
       setSaveStatus('saving');
       try {
-        const updated = await documentServices.update(docId, updates);
+        const fullUpdates = {
+          ...updates,
+          isEncrypted: activeDoc?.isEncrypted,
+          encDek:      activeDoc?.encDek,
+          _dek:        activeDoc?._dek,
+        };
+        const updated = await documentServices.update(docId, fullUpdates, {
+          masterKey,
+          expectedRevision: activeDoc?.revision,
+        });
         if (onDocumentUpdated) {
           onDocumentUpdated(updated);
         }
         setSaveStatus('saved');
       } catch (err) {
         console.error('Failed to auto-save document:', err);
-        setSaveStatus('error');
+        if (err.status === 409) {
+          setSaveStatus('conflict');
+          window.dispatchEvent(
+            new CustomEvent('document:conflict', {
+              detail: { docId, activeDoc, currentRevision: err.data?.currentRevision },
+            })
+          );
+        } else {
+          setSaveStatus('error');
+        }
       }
     },
-    [isGuest, activeDoc, onDocumentUpdated]
+    [isGuest, activeDoc, onDocumentUpdated, masterKey]
   );
 
   const queueAutoSave = useCallback(
