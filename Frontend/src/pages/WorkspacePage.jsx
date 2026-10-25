@@ -126,6 +126,7 @@ function WorkspaceContent() {
     isRegisterModalOpen,
     openRegisterModal,
     closeRegisterModal,
+    exitGuest,
   } = useAuth();
 
   const {
@@ -712,7 +713,7 @@ function WorkspaceContent() {
         onCreateDoc={handleCreateDoc}
         onDeleteDoc={handleDeleteDoc}
         onLogout={logout}
-        onTriggerAuth={openRegisterModal}
+        onTriggerAuth={exitGuest}
         isOpen={isSidebarOpen}
         onClose={() => dispatch(setSidebarOpen(false))}
         onToggle={() => dispatch(toggleSidebar())}

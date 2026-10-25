@@ -1,165 +1,210 @@
 # Document Workshops
 
-**Document Workshops** is a powerful, web-based collaborative document editor that mirrors the rich text editing experience of Microsoft Word and Google Docs. Built with a modern tech stack, it features auto-saving, real-time rich text editing capabilities, custom page layouts, and a robust backend with secure authentication and rate-limiting.
+[![Security: Zero-Knowledge](https://img.shields.io/badge/Security-Zero--Knowledge%20E2EE-blue.svg)](SECURITY.md)
+[![Backend Tests: 34 Passing](https://img.shields.io/badge/Backend%20Tests-34%2F34%20Pass-brightgreen.svg)]()
+[![Frontend Tests: 35 Passing](https://img.shields.io/badge/Frontend%20Tests-35%2F35%20Pass-brightgreen.svg)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)]()
+
+**Document Workshops** is a modern, web-based collaborative document editor that mirrors the rich text editing experience of Microsoft Word and Google Docs, backed by a **Zero-Knowledge, End-to-End Encrypted (E2EE) Vault** and defense-in-depth security.
+
+Built with a performance-first tech stack, it features block-based document editing, dynamic canvas page layouts, auto-saving with optimistic concurrency conflict detection, and client-side encryption where documents are encrypted and decrypted entirely inside the browser.
 
 ---
 
-## 🚀 Features
+## 🚀 Key Features
 
-- **Rich Text Editing:** Full text formatting capabilities (bold, italics, underline, headers) along with specialized blocks like callouts, kanban boards, task lists, and data tables.
-- **Dynamic Page Layouts:** Customizable page sizes (A4, Letter, Legal, Full Width), margins, orientations, and themed canvas modes (Classic Word, Dark Office, Soft Blue, etc.).
-- **Robust Security:** JWT-based authentication using short-lived access tokens and `HttpOnly` refresh tokens, guarded by a highly optimized, in-memory continuous Token Bucket rate limiter.
-- **Export & Print:** Native support for generating standard `.docx` files and clean PDF prints straight from the browser.
-- **Silent Token Refresh:** Transparent background handling of token expiration via an interceptor that seamlessly queues and replays requests without disrupting the user experience.
+### 🔐 Zero-Knowledge Encrypted Vault
+- **Client-Side Cryptography**: Your master passphrase never leaves your device. Keys are derived in-browser using **Argon2id** (with WebAssembly acceleration) and fallback to **PBKDF2-HMAC-SHA-256** (600,000 iterations).
+- **Envelope Encryption**: Each document receives an independently generated 256-bit AES-GCM Data Encryption Key (DEK). Titles, icons, and document blocks are encrypted before network transmission.
+- **256-Bit Recovery Keys**: Emergency recovery codes allow secure vault recovery without central authority or password resets.
+- **In-Memory Key Safety**: DEKs are never saved in local storage or Redux state. They reside in a protected, ephemeral key cache that automatically purges on vault lock, logout, or session termination.
+- **15-Minute Inactivity Auto-Lock**: Automatic vault lock on idle timeout with automatic memory sanitization and clipboard wipe after 60 seconds.
+
+### 📝 Document Editing & Experience
+- **Rich Block Editing**: Headings, styled text, lists, code blocks with syntax highlighting, callout banners, data tables, and kanban boards.
+- **Dynamic Layouts**: Switch between A4, Letter, Legal, and Full Width page formats, customize margins with an interactive ruler, and switch canvas visual themes.
+- **Optimistic Concurrency & Conflict Protection**: Strict atomic revisions (`revision` / `If-Match`) prevent concurrent overwrite data loss, presenting conflict resolution alerts when documents are updated across sessions.
+- **Export & Print**: Export directly to standard Microsoft Word (`.docx`) files or print cleanly formatted pages stripped of UI chrome.
+
+### 🛡️ Defense-in-Depth Authentication
+- **Dual JWT with Family Rotation**: Short-lived access tokens paired with `HttpOnly` refresh tokens that track rotation families (`fam`). Replayed refresh tokens instantly trigger revocation of the entire token family.
+- **Origin Guard CSRF Shield**: Mutating endpoints enforce matching `Origin` / `Referer` headers against allowed application origins.
+- **Continuous Token Bucket & Split Rate Limiting**: Strict rate limiting (10 req/15 min) and token bucket guards on sensitive auth endpoints, paired with generous limits (60 req/15 min) for silent background refreshes.
+- **Google OAuth Linking**: Secure Google Sign-In with audience validation, verified email enforcement, and explicit password linking protection.
 
 ---
 
 ## 🛠️ Architecture & Tech Stack
 
-### Frontend (Client-Side)
-- **Framework:** React 18, utilizing functional components and hooks.
-- **Bundler:** Vite (optimized with React lazy loading & Suspense for fast initial loads).
-- **Styling:** Tailwind CSS for a highly responsive, utility-first design, augmented with Lucide React for modern iconography.
-- **State Management:** Redux Toolkit handles global document state, complemented by React Context for UI/Editor preferences and Authentication.
+```
+┌─────────────────────────────────────────────────────────────┐
+│                       Frontend (Vite)                       │
+│  React 18  │  Redux Toolkit  │  Tailwind CSS  │  Web Cryptography │
+│  Argon2id  │  AES-GCM-256    │  keyCache.js   │  AutoSave Hook    │
+└──────────────────────────────┬──────────────────────────────┘
+                               │ HTTPS / JSON Envelopes
+                               │ (Ciphertext + IV + Tag)
+┌──────────────────────────────▼──────────────────────────────┐
+│                    Backend (Node / Express)                 │
+│  Origin Guard  │  Token Bucket  │  Strict Rate Limiter      │
+│  Envelope Validators  │  fam Token Rotation  │  MongoSanitize │
+└──────────────────────────────┬──────────────────────────────┘
+                               │ Mongoose Driver
+┌──────────────────────────────▼──────────────────────────────┐
+│                      Database (MongoDB)                     │
+│  Encrypted Envelopes (No Plaintext) │ User & Vault Metadata │
+└─────────────────────────────────────────────────────────────┘
+```
 
-### Backend (Server-Side)
-- **Runtime & Framework:** Node.js with Express.
-- **Database:** MongoDB (via Mongoose) to store users and JSON-structured document block arrays.
-- **Authentication:** Dual-token strategy with JWT (JSON Web Tokens).
+### Frontend
+- **Framework**: React 18 with hooks and context providers (`AuthContext`, `VaultContext`, `EditorSettingsContext`).
+- **State Management**: Redux Toolkit for global document collections, keeping keys completely out of state.
+- **Cryptography**: Web Crypto API (SubtleCrypto) + `@noble/hashes` for Argon2id, AES-GCM-256 envelope encryption.
+- **Build & Test**: Vite, Tailwind CSS, Lucide icons, Vitest.
+
+### Backend
+- **Runtime**: Node.js (v18+) and Express.
+- **Database**: MongoDB with Mongoose schemas and compound indexes.
+- **Security Middleware**: Helmet, CORS origin restriction, Origin Guard CSRF defense, `express-mongo-sanitize`, dual rate-limiters, continuous token bucket guards.
+- **Test Suite**: Native Node.js test runner with `mongodb-memory-server` for fully isolated in-memory test execution.
 
 ---
 
-## 🔄 App Data Flow & API Architecture
-
-### Data Flow
-1. **State Initialization:** When a user logs in, `AuthContext` verifies the session and establishes user state.
-2. **Document Loading:** The Redux store fetches the list of documents and initializes the `WorkspacePage`.
-3. **Editing Loop:** The `EditorCanvas` modifies individual block objects (JSON). These local changes are dispatched to Redux and pushed to the `useAutoSave` hook.
-4. **Auto-Save:** `useAutoSave` debounces the local state changes and issues background API patches to persist changes in MongoDB. 
-5. **Session Management:** If an access token expires during auto-save, the central `api.js` utility catches the `401 TOKEN_EXPIRED`, queues all outgoing requests, silently fetches a new token from `/api/auth/refresh`, and seamlessly replays the queued requests.
-
-#### Data Flow Diagram
+## 🔄 Cryptographic Flow
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant UI as Frontend (React)
-    participant Store as Redux Store
-    participant API as API Client (api.js)
-    participant Server as Backend (Node/Express)
+    autonumber
+    actor User
+    participant Browser as Browser (Frontend)
+    participant Memory as Memory Cache (keyCache)
+    participant Server as Backend Server
     participant DB as MongoDB
 
-    User->>UI: Login / Register
-    UI->>API: POST /api/auth/login
-    API->>Server: Authenticate request
-    Server->>DB: Verify credentials
-    Server-->>API: Access Token + HttpOnly Refresh Token
-    API-->>UI: User Session Initialized
-    
-    UI->>Store: Fetch & Load Documents
-    User->>UI: Edit Document (Rich Text/Blocks)
-    UI->>Store: Dispatch Local State Updates
-    
-    loop Auto-Save (Debounced)
-        UI->>API: PATCH /api/documents/:id
-        
-        alt Access Token Valid
-            API->>Server: Validate Token & Route Request
-            Server->>DB: Persist JSON Blocks
-            Server-->>UI: 200 OK
-        else Access Token Expired (401)
-            API->>Server: Silent POST /api/auth/refresh (via Cookie)
-            Server-->>API: New Access Token
-            API->>Server: Replay PATCH /api/documents/:id (Transparent)
-            Server->>DB: Persist JSON Blocks
-            Server-->>UI: 200 OK
-        end
-    end
+    Note over User,Browser: 1. Vault Setup / Unlock
+    User->>Browser: Enter Master Passphrase
+    Browser->>Browser: Derive KEK via Argon2id (64MB, 3 passes)
+    Browser->>Memory: Store KEK in protected memory
+
+    Note over User,Browser: 2. Document Creation / Encryption
+    User->>Browser: Create or Edit Document
+    Browser->>Browser: Generate random 256-bit DEK
+    Browser->>Browser: Encrypt content with DEK (AES-GCM-256)
+    Browser->>Browser: Wrap DEK with KEK
+    Browser->>Memory: Cache DEK (keyed by Document ID)
+    Browser->>Server: POST /api/documents (Encrypted Envelope Only)
+    Server->>Server: Validate envelope shape & reject any plaintext
+    Server->>DB: Store { encTitle, encContent, encDek, revision: 1 }
+
+    Note over User,Browser: 3. Document Retrieval & Decryption
+    User->>Browser: Open Document
+    Browser->>Server: GET /api/documents/:id
+    Server-->>Browser: Return Encrypted Envelope
+    Browser->>Memory: Get cached DEK OR unwrap encDek using KEK
+    Browser->>Browser: Decrypt content via DEK
+    Browser-->>User: Render plaintext in Editor Canvas
 ```
 
-### Key API Routes
-All API requests are prefixed with `/api` and interact with the backend Express router:
+---
 
-- **Authentication (`/api/auth/*`)**
-  - `POST /api/auth/register`: Creates a new user.
-  - `POST /api/auth/login`: Authenticates user and issues Access Token + HttpOnly Refresh Token.
-  - `POST /api/auth/refresh`: Silently refreshes the short-lived access token.
-  - `GET /api/auth/me`: Validates current session.
-  - *Note: Auth routes are protected by a custom `tokenBucketGuard` to prevent brute-force and DDoS attacks.*
+## 🚦 API Endpoints
 
-- **Documents (`/api/documents/*`)**
-  - `GET /api/documents`: Fetches the active user's documents.
-  - `GET /api/documents/:id`: Fetches the entire block-content for a specific document.
-  - `POST /api/documents`: Initializes a new blank document.
-  - `PATCH /api/documents/:id`: Updates title, icon, or document content arrays.
-  - `DELETE /api/documents/:id`: Soft or hard deletes a document workspace.
+All endpoints are mounted under `/api`:
+
+### Authentication (`/api/auth/*`)
+| Method | Endpoint | Description | Rate Limit |
+|--------|----------|-------------|------------|
+| `POST` | `/auth/register` | Register new user account | Strict (10/15m) + Bucket |
+| `POST` | `/auth/login` | Authenticate with email/password | Strict (10/15m) + Bucket |
+| `POST` | `/auth/google` | Authenticate or link with Google ID token | Strict (10/15m) + Bucket |
+| `POST` | `/auth/verify-email` | Verify email address token | Strict (10/15m) |
+| `POST` | `/auth/resend-verification` | Resend verification email | Strict (10/15m) |
+| `POST` | `/auth/refresh` | Silently rotate access token using HttpOnly cookie | Generous (60/15m) |
+| `POST` | `/auth/logout` | Revoke session and clear cookies | Generous (60/15m) |
+| `GET`  | `/auth/me` | Fetch active user session | Generous (60/15m) |
+
+### Zero-Knowledge Vault (`/api/vault/*`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET`  | `/vault/meta` | Fetch encrypted vault configuration & salt |
+| `POST` | `/vault/setup` | Initialize vault parameters and wrapped keys |
+| `PUT`  | `/vault/meta` | Rotate passphrase, re-wrap master keys, archive historical keys |
+
+### Documents (`/api/documents/*`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET`    | `/documents` | List user documents (metadata & encrypted summaries) |
+| `GET`    | `/documents/:id` | Fetch full document content (plaintext or encrypted envelope) |
+| `POST`   | `/documents` | Create document (enforces envelope if vault enabled) |
+| `PATCH`  | `/documents/:id` | Update document (mandatory `revision` / `If-Match`, returns 409 on conflict) |
+| `DELETE` | `/documents/:id` | Delete document |
 
 ---
 
-## 🚀 Setup & Installation
-
-Want to run the project locally? Follow these steps:
+## ⚡ Getting Started Locally
 
 ### Prerequisites
-- Node.js (v18 or higher)
-- MongoDB (running locally or a MongoDB Atlas URI)
+- **Node.js**: v18.0.0 or higher
+- **MongoDB**: Local MongoDB instance or Atlas connection string
 
-### Backend Setup
-1. Open a terminal and navigate to the backend directory:
-   ```bash
-   cd backend/server
-   ```
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Create a `.env` file in the `backend/server` directory with the following variables:
-   ```env
-   PORT=3000
-   MONGODB_URI=mongodb://127.0.0.1:27017/document_workshops
-   JWT_ACCESS_SECRET=your_super_secret_access_key
-   JWT_REFRESH_SECRET=your_super_secret_refresh_key
-   ```
-4. Start the development server:
-   ```bash
-   npm run dev
-   ```
+### 1. Clone & Configure
+```bash
+git clone https://github.com/AdityaUpadhyay2610/document-workspace.git
+cd document-workshops
+```
 
-### Frontend Setup
-1. Open a new terminal and navigate to the frontend directory:
-   ```bash
-   cd Frontend
-   ```
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Create a `.env` file in the `Frontend` directory with the following variable:
-   ```env
-   VITE_API_URL=http://localhost:3000
-   ```
-4. Start the Vite development server:
-   ```bash
-   npm run dev
-   ```
+### 2. Backend Setup
+```bash
+cd Backend/server
+npm install
+cp .env.example .env
+```
+*Review `.env` and configure your `MONGODB_URI`, `JWT_ACCESS_SECRET` (min 32 chars), `JWT_REFRESH_SECRET` (min 32 chars, distinct from access secret), and `CLIENT_URL`.*
+
+Start backend in development mode:
+```bash
+npm run dev
+```
+
+### 3. Frontend Setup
+```bash
+cd ../../Frontend
+npm install
+cp .env.example .env
+```
+*Configure `VITE_API_URL=http://localhost:5000` in `.env`.*
+
+Start frontend in development mode:
+```bash
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ---
 
-## 🤝 How to Contribute
+## 🧪 Testing
 
-Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+### Backend Security & Integration Tests
+Runs 34 tests covering IDOR, rate limiting, vault invariants, envelope bypass rejection, atomic revisions, and token rotation against an in-memory MongoDB:
+```bash
+cd Backend/server
+npm test
+```
 
-1. **Fork the Project**
-2. **Create your Feature Branch** (`git checkout -b feature/AmazingFeature`)
-3. **Commit your Changes** (`git commit -m 'Add some AmazingFeature'`)
-4. **Push to the Branch** (`git push origin feature/AmazingFeature`)
-5. **Open a Pull Request**
-
-Please ensure that you run `npm run lint` in both the frontend and backend directories before submitting a PR to keep the codebase clean.
+### Frontend Crypto Unit Tests
+Runs 35 unit tests validating Argon2id derivation, key wrapping, recovery flows, passphrase entropy, and memory cache lifecycle:
+```bash
+cd Frontend
+npm test -- --run
+```
 
 ---
 
-## 👨‍💻 Author
+## 🔒 Security Policy
+For details on our threat model, key derivation parameters, and responsible vulnerability disclosure, please refer to [SECURITY.md](SECURITY.md).
 
-**Aditya Upadhyay**
-- Feel free to reach out or open an issue if you have questions or feedback regarding the architecture or implementation!
+---
+
+## 📄 License
+This project is licensed under the MIT License.

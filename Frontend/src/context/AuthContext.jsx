@@ -172,6 +172,14 @@ export function AuthProvider({ children }) {
     localStorage.setItem('isGuest', 'true');
   }, []);
 
+  const exitGuest = useCallback(() => {
+    clearAuthTokens();
+    setUser(null);
+    setIsGuest(false);
+    localStorage.removeItem('isGuest');
+    localStorage.removeItem('user');
+  }, []);
+
   const logout = useCallback(async () => {
     // Explicit user-initiated logout — revokes refresh token on the server
     try {
@@ -203,6 +211,7 @@ export function AuthProvider({ children }) {
     register,
     googleAuth,
     continueAsGuest,
+    exitGuest,
     logout,
     isRegisterModalOpen,
     openRegisterModal,

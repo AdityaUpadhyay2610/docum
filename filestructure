@@ -1,77 +1,126 @@
 document-workshops/
-├── Frontend/                           # React Frontend (Vite) - Port 5173
+├── Frontend/                           # React Frontend (Vite + Tailwind CSS)
 │   ├── public/
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── auth/                   # GuestRegisterModal.jsx
 │   │   │   ├── common/                 # ColorPickerDropdown.jsx
-│   │   │   └── layout/
-│   │   │       └── sidebar/            # Collapsible sidebar & document items
+│   │   │   ├── layout/
+│   │   │   │   └── sidebar/            # Collapsible sidebar, document items, vault controls
+│   │   │   └── vault/                  # Zero-knowledge vault UI modals
+│   │   │       ├── VaultSetupModal.jsx           # Setup wizard (Argon2id derivation + recovery key)
+│   │   │       ├── VaultUnlockModal.jsx          # Unlock modal (passphrase & recovery code tabs)
+│   │   │       ├── VaultChangePassphraseModal.jsx# Passphrase rotation modal
+│   │   │       ├── RecoveryKeyModal.jsx          # Recovery key display & verification
+│   │   │       └── index.js
 │   │   ├── context/
-│   │   │   ├── AuthContext.jsx         # User auth & guest mode state
-│   │   │   └── EditorSettingsContext.jsx # Margins, orientation, themes, zoom
+│   │   │   ├── AuthContext.jsx         # User auth, silent refresh, guest mode & exit
+│   │   │   ├── EditorSettingsContext.jsx # Margins, orientation, canvas themes, zoom
+│   │   │   └── VaultContext.jsx        # In-memory KEK/vault state, 15m auto-lock timer
 │   │   ├── features/
 │   │   │   └── editor/
 │   │   │       ├── blocks/             # Text, Table, Board, Code, Callout blocks
 │   │   │       ├── components/
-│   │   │       │   ├── GoogleDocsToolbar.jsx # Google Docs header & action pill toolbar
+│   │   │       │   ├── GoogleDocsToolbar.jsx # Header and action pill toolbar
 │   │   │       │   ├── DocumentRuler.jsx     # Horizontal margin ruler
 │   │   │       │   ├── DocumentOutline.jsx   # Heading navigator pane
 │   │   │       │   ├── FindReplaceModal.jsx  # Find & replace tool
 │   │   │       │   ├── ShortcutsModal.jsx    # Keyboard shortcuts cheat sheet
 │   │   │       │   └── PageFooter.jsx        # Status bar with word count & zoom
 │   │   │       ├── hooks/
-│   │   │       │   ├── useAutoSave.js        # Debounced cloud & local auto-save
+│   │   │       │   ├── useAutoSave.js        # Debounced cloud auto-save with 409 conflict handling
 │   │   │       │   ├── useUndoRedo.js        # Undo / Redo history stack
 │   │   │       │   └── useWordStats.js       # Word & character count metrics
 │   │   │       ├── editorCanvas.jsx          # Paper sheet layout & click-to-type canvas
 │   │   │       ├── slashMenu.jsx             # Quick '/' block command menu
 │   │   │       └── index.js
 │   │   ├── pages/
-│   │   │   ├── WorkspacePage.jsx       # Main document workspace page
-│   │   │   ├── AuthPage.jsx            # Sign in & Registration page
+│   │   │   ├── WorkspacePage.jsx       # Document workspace, locked screens, conflict banner
+│   │   │   ├── AuthPage.jsx            # Sign in, registration, Google OAuth & password linking
+│   │   │   ├── VerifyEmailPage.jsx     # Email verification landing page
 │   │   │   └── index.js
 │   │   ├── services/
-│   │   │   ├── api.js                  # Central fetch client with JWT & silent refresh
-│   │   │   ├── authServices.js         # User registration & login services
-│   │   │   ├── documentServices.js     # Document CRUD services
+│   │   │   ├── crypto/                 # End-to-end zero-knowledge cryptography suite
+│   │   │   │   ├── __tests__/
+│   │   │   │   │   └── crypto.test.js  # Vitest unit test suite (35 tests)
+│   │   │   │   ├── encryption.js       # AES-GCM-256 document encrypt/decrypt operations
+│   │   │   │   ├── kdf.js              # Argon2id (WebAssembly) & PBKDF2 key derivation
+│   │   │   │   ├── keyCache.js         # Module-scoped in-memory DEK cache (auto-clears on lock)
+│   │   │   │   ├── keys.js             # AES key generation, wrapping/unwrapping & chunked base64
+│   │   │   │   ├── passphrase.js       # zxcvbn passphrase strength validator & entropy rules
+│   │   │   │   ├── vault.js            # Vault setup, unlock, re-keying & recovery reset
+│   │   │   │   └── index.js
+│   │   │   ├── api.js                  # Axios client, CSRF Origin header & silent refresh queue
+│   │   │   ├── authServices.js         # User registration, login, logout, verification
+│   │   │   ├── documentServices.js     # Document CRUD services (with client ObjectId generator)
+│   │   │   ├── vaultServices.js        # Vault metadata fetch, setup, and key rotation API
 │   │   │   ├── docxExport.js           # Word (.docx) generator (dynamically imported)
 │   │   │   ├── printService.js         # Semantic HTML printer (strips UI chrome)
 │   │   │   ├── validation.js           # Client-side input validators
 │   │   │   └── index.js
+│   │   ├── store/
+│   │   │   ├── slices/
+│   │   │   │   ├── documentSlice.js    # Redux document state (strips _dek, clears on vault lock)
+│   │   │   │   └── uiSlice.js          # Sidebar & navigation UI state
+│   │   │   └── store.js                # Redux Toolkit store configuration
 │   │   ├── App.jsx                     # Route & Auth switcher
 │   │   ├── main.jsx                    # Vite React DOM entrypoint
-│   │   └── index.css                   # Global stylesheet & Tailwind
-│   ├── .env                            # VITE_API_URL=http://localhost:5000/api
+│   │   ├── index.css                   # Global stylesheet & Tailwind CSS
+│   │   └── config.js                   # Client environment configuration
+│   ├── .env.example                    # Frontend environment template
+│   ├── vercel.json                     # Vercel deployment config with hardened CSP headers
 │   ├── package.json
 │   └── vite.config.js
 │
-├── Backend/                            # Express REST API - Port 5000
+├── Backend/                            # Express REST API
 │   └── server/
 │       ├── src/
 │       │   ├── config/
-│       │   │   ├── db.config.js        # MongoDB connection
+│       │   │   ├── config.js           # Environment validation, secret length & distinctness checks
+│       │   │   ├── db.config.js        # MongoDB connection setup
 │       │   │   ├── db.indexes.js       # MongoDB compound & text index sync
-│       │   │   └── document.aggregation.js # Optimized aggregation pipelines
+│       │   │   └── document.aggregation.js # Optimized document aggregation pipelines
 │       │   ├── controllers/
-│       │   │   ├── auth.controller.js  # User authentication & token rotation
-│       │   │   └── document.controller.js # Document CRUD handlers
-│       │   ├── models/
-│       │   │   ├── user.models.js      # User schema
-│       │   │   └── document.models.js  # Document blocks schema
-│       │   ├── routes/
-│       │   │   ├── auth.routes.js      # Auth API endpoints
-│       │   │   └── document.routes.js  # Document API endpoints
+│       │   │   ├── auth.controller.js  # Auth, Google OAuth, token rotation & fam family revocation
+│       │   │   ├── document.controller.js # Document CRUD, atomic revision checks, sentinel guards
+│       │   │   └── vault.controller.js # Vault metadata setup, rotation & previousKeys capping
 │       │   ├── middleware/
-│       │   │   ├── auth.middleware.js  # JWT authentication verification
-│       │   │   └── validate.middleware.js # Express-validator request gatekeeper
-│       │   ├── validators/
-│       │   │   └── document.validator.js # Document schema & style validators
+│       │   │   ├── auth.middleware.js          # Dual JWT verification
+│       │   │   ├── mongoSanitize.middleware.js # NoSQL injection defense
+│       │   │   ├── originGuard.middleware.js   # CSRF Origin/Referer header enforcement
+│       │   │   ├── rateLimiter.middleware.js   # Strict (10/15m) & Generous (60/15m) rate limiters
+│       │   │   ├── tokenBucketGuard.middleware.js # Continuous token bucket algorithm for auth endpoints
+│       │   │   └── validate.middleware.js      # Express-validator error handler
+│       │   ├── models/
+│       │   │   ├── user.models.js      # User schema, refresh family tracking, vault metadata
+│       │   │   └── document.models.js  # Document schema, envelope schema, revision counter
+│       │   ├── routes/
+│       │   │   ├── auth.routes.js      # Auth API endpoints (split rate limiters + guards)
+│       │   │   ├── document.routes.js  # Document API endpoints
+│       │   │   └── vault.routes.js     # Vault API endpoints
+│       │   ├── services/
+│       │   │   ├── email.service.js    # HTML-escaped transactional emails
+│       │   │   └── googleAuth.service.js # Google ID token audience & verified email checks
 │       │   ├── utils/
-│       │   │   └── validation.js       # Input sanitizer & validator utilities
-│       │   ├── app.js                  # Express app, CORS, security headers
+│       │   │   └── validation.js       # Input sanitization and validators
+│       │   ├── validators/
+│       │   │   ├── auth.validator.js     # Auth request validators
+│       │   │   ├── document.validator.js # Document schema, sentinel & encrypted write validators
+│       │   │   ├── envelope.validator.js # Base64, IV length & envelope structure validators
+│       │   │   └── vault.validator.js    # Vault metadata length & structure validators
+│       │   ├── app.js                  # Express app, Helmet, CORS, trust proxy, rate limiters
 │       │   └── server.js               # HTTP listener entry point
-│       ├── .env                        # PORT=5000, MONGO_URI=..., CLIENT_URL=...
+│       ├── tests/                      # Automated Node.js native test suite (34 tests)
+│       │   ├── setup.js                # In-memory MongoDB (MongoMemoryServer) lifecycle
+│       │   ├── auth_security.test.js   # Auth rate limiting, refresh throttle, token bucket, CSRF
+│       │   ├── google_audience.test.js # Google OAuth audience & verified-email tests
+│       │   ├── idor.test.js            # IDOR isolation & owner CRUD tests
+│       │   └── vault.test.js           # Vault setup, envelope bypass, revisions, conflicts
+│       ├── .env.example                # Backend environment template (71 lines fully documented)
 │       └── package.json
 │
-└── README.md                           # Documentation & quickstart guide
+├── docs/                               # Documentation & security audit reports
+│   └── security-report.md              # Full security audit report and verification matrix
+├── SECURITY.md                         # Security policy, threat model & crypto specifications
+├── README.md                           # Documentation & quickstart guide
+└── filestructure                       # Directory layout and component guide

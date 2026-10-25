@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import {
   X,
   Shield,
@@ -38,6 +38,14 @@ export default function VaultSetupModal({ isOpen, onClose }) {
   const [challengeIndices, setChallengeIndices] = useState([0, 1]);
   const [challengeInputA, setChallengeInputA] = useState('');
   const [challengeInputB, setChallengeInputB] = useState('');
+  const clipboardTimerRef = useRef(null);
+
+  // Clean up clipboard timer on unmount
+  useEffect(() => {
+    return () => {
+      if (clipboardTimerRef.current) clearTimeout(clipboardTimerRef.current);
+    };
+  }, []);
 
   const groups = useMemo(() => {
     return recoveryKey ? recoveryKey.split('-') : [];
@@ -51,6 +59,12 @@ export default function VaultSetupModal({ isOpen, onClose }) {
   const handleClose = () => {
     if (step === 2) {
       abortVaultSetup();
+    }
+    // Clear clipboard timer and wipe clipboard if recovery key was copied
+    if (clipboardTimerRef.current) {
+      clearTimeout(clipboardTimerRef.current);
+      clipboardTimerRef.current = null;
+      navigator.clipboard?.writeText('').catch(() => {});
     }
     setStep(1);
     setPassphrase('');
@@ -103,8 +117,14 @@ export default function VaultSetupModal({ isOpen, onClose }) {
       await navigator.clipboard.writeText(recoveryKey);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+      // Auto-clear clipboard after 60 seconds for security
+      if (clipboardTimerRef.current) clearTimeout(clipboardTimerRef.current);
+      clipboardTimerRef.current = setTimeout(() => {
+        navigator.clipboard?.writeText('').catch(() => {});
+        clipboardTimerRef.current = null;
+      }, 60_000);
     } catch {
-      // Fallback
+      // Fallback — clipboard API not available
     }
   };
 
