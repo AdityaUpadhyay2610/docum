@@ -8,11 +8,16 @@ import {
   LogOut,
   User,
   Sparkles,
-  LogIn,
   PanelLeftClose,
   PanelLeftOpen,
+  Lock,
+  Unlock,
+  Shield,
+  KeyRound,
+  LogIn,
 } from 'lucide-react';
 import DocumentItem from './documentitems';
+import { useVault } from '../../../context/VaultContext';
 
 export default function Sidebar({
   documents = [],
@@ -28,6 +33,15 @@ export default function Sidebar({
   onClose,
   onToggle,
 }) {
+  const {
+    isVaultEnabled,
+    isUnlocked,
+    lockVault,
+    openUnlockModal,
+    openSetupModal,
+    openChangeModal,
+  } = useVault();
+
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
@@ -189,6 +203,56 @@ export default function Sidebar({
             <span>New Document</span>
           </button>
         </div>
+
+        {/* Vault Controls (Logged-in only) */}
+        {!isGuest && user && (
+          <div className="p-2.5 border-t border-neutral-200/60 bg-neutral-100/50">
+            {!isVaultEnabled ? (
+              <button
+                type="button"
+                onClick={openSetupModal}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              >
+                <Shield className="w-3.5 h-3.5 text-amber-400" />
+                <span>Enable E2EE Vault</span>
+              </button>
+            ) : isUnlocked ? (
+              <div className="flex items-center justify-between gap-1 text-xs">
+                <div className="flex items-center gap-1.5 text-emerald-700 font-semibold truncate">
+                  <Unlock className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Vault Unlocked</span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={openChangeModal}
+                    className="p-1 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-200/70 rounded transition-colors"
+                    title="Change Vault Passphrase"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={lockVault}
+                    className="px-2 py-0.5 bg-neutral-200 hover:bg-neutral-300 text-neutral-700 rounded text-[11px] font-medium transition-colors cursor-pointer"
+                    title="Lock Vault immediately"
+                  >
+                    Lock
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={openUnlockModal}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>Unlock Vault</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* User Account / Guest Profile Footer */}
         <div className="p-3 border-t border-neutral-200/80 bg-neutral-100/70">

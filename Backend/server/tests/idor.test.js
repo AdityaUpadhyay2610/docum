@@ -119,17 +119,60 @@ test('Owner Access: User A CAN read their own document', async () => {
   assert.equal(res.body.title, 'User A Private Document');
 });
 
-test('Owner Access: User A CAN update their own document', async () => {
+test('Plaintext update: If-Match / revision is mandatory (returns 428 if missing)', async () => {
   const res = await request(app)
     .put(`/api/documents/${docAId}`)
     .set('Authorization', `Bearer ${tokenUserA}`)
     .set('Origin', 'http://localhost:5173')
+    .send({
+      title: 'Should fail without revision',
+    });
+
+  assert.equal(res.status, 428);
+  assert.match(res.body.error, /precondition required/i);
+});
+
+test('Plaintext update: reserved sentinel "[Encrypted]" is rejected for plaintext docs', async () => {
+  const res = await request(app)
+    .put(`/api/documents/${docAId}`)
+    .set('Authorization', `Bearer ${tokenUserA}`)
+    .set('Origin', 'http://localhost:5173')
+    .set('If-Match', '0')
+    .send({
+      title: '[Encrypted]',
+    });
+
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /reserved sentinel/i);
+});
+
+test('Plaintext update: stale revision returns 409 Conflict', async () => {
+  const res = await request(app)
+    .put(`/api/documents/${docAId}`)
+    .set('Authorization', `Bearer ${tokenUserA}`)
+    .set('Origin', 'http://localhost:5173')
+    .set('If-Match', '99')
+    .send({
+      title: 'Stale update',
+    });
+
+  assert.equal(res.status, 409);
+  assert.match(res.body.error, /mismatch/i);
+});
+
+test('Owner Access: User A CAN update their own document with valid revision', async () => {
+  const res = await request(app)
+    .put(`/api/documents/${docAId}`)
+    .set('Authorization', `Bearer ${tokenUserA}`)
+    .set('Origin', 'http://localhost:5173')
+    .set('If-Match', '0')
     .send({
       title: 'User A Updated Document',
     });
 
   assert.equal(res.status, 200);
   assert.equal(res.body.title, 'User A Updated Document');
+  assert.equal(res.body.revision, 1);
 });
 
 test('Owner Access: User A CAN delete their own document', async () => {

@@ -207,7 +207,16 @@ export function lockVault(vaultState) {
  * @param {VaultMeta} vaultMeta            - Current vault metadata from server
  * @returns {Promise<ChangePassphraseResult>}
  */
-export async function changePassphrase(oldPassphrase, newPassphrase, newRecoveryKeyBytes, vaultMeta) {
+export async function changePassphrase(oldPassphrase, newPassphrase, vaultMeta, newRecoveryKeyBytes = null) {
+  // If caller passed legacy (oldPass, newPass, recovBytes, vaultMeta), handle gracefully
+  if (vaultMeta instanceof Uint8Array && newRecoveryKeyBytes && typeof newRecoveryKeyBytes === 'object' && newRecoveryKeyBytes.salt) {
+    const temp = vaultMeta;
+    vaultMeta = newRecoveryKeyBytes;
+    newRecoveryKeyBytes = temp;
+  }
+
+  const recoveryBytes = newRecoveryKeyBytes || generateRecoveryKey().rawBytes;
+
   // Unlock with old passphrase — re-import as EXTRACTABLE for re-wrapping
   const salt    = fromBase64(vaultMeta.salt);
   const { keyBytes: oldKekBytes } = await deriveKEK(oldPassphrase, salt, vaultMeta.kdfParams);
@@ -236,7 +245,7 @@ export async function changePassphrase(oldPassphrase, newPassphrase, newRecovery
   const { wrapped: newWrappedMK, iv: newMkIv } = await wrapKey(masterKeyExtractable, newKek);
 
   // Re-wrap with new recovery key
-  const recovKey = await importRecoveryKey(newRecoveryKeyBytes);
+  const recovKey = await importRecoveryKey(recoveryBytes);
   const { wrapped: newRecovWrappedMK, iv: newRecovMkIv } = await wrapKey(masterKeyExtractable, recovKey);
 
   // Re-import as non-extractable (active session)

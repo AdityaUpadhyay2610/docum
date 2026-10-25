@@ -110,6 +110,20 @@ export const authServices = {
   async getMe() {
     return api.get('/auth/me');
   },
+
+  /**
+   * Verify an account email using the token from the verification link
+   */
+  async verifyEmail(token) {
+    return api.post('/auth/verify-email', { token });
+  },
+
+  /**
+   * Resend a verification email to the current authenticated user
+   */
+  async resendVerification() {
+    return api.post('/auth/resend-verification', {});
+  },
 };
 
 export default authServices;

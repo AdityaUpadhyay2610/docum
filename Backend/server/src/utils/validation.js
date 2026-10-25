@@ -1,3 +1,11 @@
+import {
+  validateEnvelopeObject,
+  validateEncDekObject,
+  MAX_CT_TITLE_LEN,
+  MAX_CT_ICON_LEN,
+  MAX_CT_CONTENT_LEN,
+} from '../validators/envelope.validator.js';
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -147,66 +155,28 @@ export const validateDocumentInput = (payload = {}, { partial = false } = {}) =>
     });
 
     // ── Envelope shape + max-size validation ──────────────────────────────────
-    // Max sizes: v ≤ 16 chars, iv ≤ 64 chars (base64 of 12 bytes = 16, generous limit),
-    //            ct ≤ 5 MB base64, wrappedDek ≤ 256, dekIv ≤ 64
-    const BASE64_RE = /^[A-Za-z0-9+/\-_]+=*$/;
-    const MAX_IV_LEN = 64;
-    const MAX_VERSION_LEN = 16;
-    const MAX_CT_TITLE_LEN = 2048;       // title ciphertext
-    const MAX_CT_ICON_LEN = 512;         // icon ciphertext
-    const MAX_CT_CONTENT_LEN = 5242880;  // content ciphertext (5 MB)
-    const MAX_WRAPPED_DEK_LEN = 256;
-    const MAX_DEK_IV_LEN = 64;
-
-    const validateEnvelope = (envelope, fieldName, maxCtLen) => {
-      if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
-        return `${fieldName} must be an encrypted envelope object`;
-      }
-      const { v, iv, ct } = envelope;
-      if (typeof v !== 'string' || typeof iv !== 'string' || typeof ct !== 'string') {
-        return `${fieldName} must contain { v, iv, ct } string properties`;
-      }
-      if (v.length > MAX_VERSION_LEN) return `${fieldName}.v exceeds max length (${MAX_VERSION_LEN})`;
-      if (iv.length > MAX_IV_LEN) return `${fieldName}.iv exceeds max length (${MAX_IV_LEN})`;
-      if (ct.length > maxCtLen) return `${fieldName}.ct exceeds max length (${maxCtLen})`;
-      if (!BASE64_RE.test(iv)) return `${fieldName}.iv must be valid base64`;
-      if (!BASE64_RE.test(ct)) return `${fieldName}.ct must be valid base64`;
-      return null;
-    };
-
     // Validate encTitle
     if (!partial || payload.encTitle !== undefined) {
-      const err = validateEnvelope(payload.encTitle, 'encTitle', MAX_CT_TITLE_LEN);
+      const err = validateEnvelopeObject(payload.encTitle, 'encTitle', MAX_CT_TITLE_LEN);
       if (err) errors.encTitle = err;
     }
 
     // Validate encContent
     if (!partial || payload.encContent !== undefined) {
-      const err = validateEnvelope(payload.encContent, 'encContent', MAX_CT_CONTENT_LEN);
+      const err = validateEnvelopeObject(payload.encContent, 'encContent', MAX_CT_CONTENT_LEN);
       if (err) errors.encContent = err;
     }
 
     // Validate encIcon
     if (payload.encIcon !== undefined && payload.encIcon !== null) {
-      const err = validateEnvelope(payload.encIcon, 'encIcon', MAX_CT_ICON_LEN);
+      const err = validateEnvelopeObject(payload.encIcon, 'encIcon', MAX_CT_ICON_LEN);
       if (err) errors.encIcon = err;
     }
 
     // Validate encDek
     if (!partial || payload.encDek !== undefined) {
-      if (!payload.encDek || typeof payload.encDek !== 'object' || Array.isArray(payload.encDek)) {
-        errors.encDek = 'encDek must be an encrypted DEK envelope object';
-      } else {
-        const { wrappedDek, dekIv } = payload.encDek;
-        if (typeof wrappedDek !== 'string' || typeof dekIv !== 'string') {
-          errors.encDek = 'encDek must contain { wrappedDek, dekIv } string properties';
-        } else {
-          if (wrappedDek.length > MAX_WRAPPED_DEK_LEN) errors.encDek = `encDek.wrappedDek exceeds max length (${MAX_WRAPPED_DEK_LEN})`;
-          else if (dekIv.length > MAX_DEK_IV_LEN) errors.encDek = `encDek.dekIv exceeds max length (${MAX_DEK_IV_LEN})`;
-          else if (!BASE64_RE.test(wrappedDek)) errors.encDek = 'encDek.wrappedDek must be valid base64';
-          else if (!BASE64_RE.test(dekIv)) errors.encDek = 'encDek.dekIv must be valid base64';
-        }
-      }
+      const err = validateEncDekObject(payload.encDek);
+      if (err) errors.encDek = err;
     }
 
     // Cover image validation

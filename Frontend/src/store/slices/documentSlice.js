@@ -105,7 +105,13 @@ const documentSlice = createSlice({
     clearDecryptedContent(state) {
       state.vaultLocked = true;
       if (state.activeDoc?.isEncrypted) {
-        state.activeDoc = null;
+        state.activeDoc = {
+          ...state.activeDoc,
+          title: '[Encrypted]',
+          icon: '🔒',
+          content: [],
+          isLocked: true,
+        };
       }
       state.documents = state.documents.map((doc) => {
         if (doc.isEncrypted) {
@@ -114,6 +120,7 @@ const documentSlice = createSlice({
             ...rest,
             title: '[Encrypted]',
             icon: '🔒',
+            isLocked: true,
           };
         }
         return doc;

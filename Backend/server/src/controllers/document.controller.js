@@ -142,6 +142,10 @@ export const createDocument = async (req, res) => {
           content: req.body.content ?? [],
         };
 
+    if (!isEncrypted && payload.title && payload.title.trim() === '[Encrypted]') {
+      return res.status(400).json({ error: 'Title cannot be the reserved sentinel "[Encrypted]"' });
+    }
+
     const validationErrors = validateDocumentInput(payload);
     if (Object.keys(validationErrors).length > 0) {
       return res.status(400).json({ error: 'Invalid document data', fields: validationErrors });
@@ -248,6 +252,11 @@ export const updateDocument = async (req, res) => {
       return res.status(400).json({ error: 'Invalid document data', fields: validationErrors });
     }
 
+    const existing = await Document.findOne({ _id: id, userId });
+    if (!existing) {
+      return res.status(404).json({ error: 'Document not found or access denied' });
+    }
+
     const isEncrypted = req.body.isEncrypted === true;
 
     // Step 1b: Reject plaintext fields in encrypted writes
@@ -258,17 +267,33 @@ export const updateDocument = async (req, res) => {
           error: 'Encrypted documents must not include plaintext title, icon, or content fields',
         });
       }
-    }
-
-    // Step 1b: For encrypted documents, If-Match is MANDATORY (prevents blind overwrites)
-    if (isEncrypted) {
-      const ifMatch = req.headers['if-match'];
-      if (!ifMatch && updates.revision === undefined) {
-        return res.status(428).json({
-          error: 'Precondition Required: If-Match header is required for encrypted document updates',
-        });
+    } else {
+      if (updates.title && updates.title.trim() === '[Encrypted]') {
+        return res.status(400).json({ error: 'Title cannot be the reserved sentinel "[Encrypted]"' });
       }
     }
+
+    // Revision is MANDATORY for ALL document updates (prevents blind overwrites for both encrypted and plaintext)
+    const rawRevision = req.headers['if-match'] ?? updates.revision;
+    if (rawRevision === undefined || rawRevision === null || rawRevision === '') {
+      return res.status(428).json({
+        error: 'Precondition Required: If-Match header or revision field is required for all document updates',
+      });
+    }
+
+    const expectedRevision = parseInt(String(rawRevision).replace(/["']/g, ''), 10);
+    if (isNaN(expectedRevision)) {
+      return res.status(400).json({ error: 'Invalid revision value in If-Match header or revision body field' });
+    }
+    delete updates.revision; // revision is managed atomically via $inc
+
+    if (existing.revision !== expectedRevision) {
+      return res.status(409).json({
+        error: 'Conflict: Document revision mismatch',
+        currentRevision: existing.revision,
+      });
+    }
+
     // Step 1b: Force plaintext sentinel values on encrypted writes
     // This ensures migrated documents never accidentally keep real plaintext metadata.
     if (isEncrypted) {
@@ -277,19 +302,7 @@ export const updateDocument = async (req, res) => {
       updates.content = [];
     }
 
-    // Parse expected revision from If-Match header or body.revision
-    const rawRevision = req.headers['if-match'] ?? updates.revision;
-    delete updates.revision; // revision is managed atomically via $inc
-
-    const hasExpectedRevision = rawRevision !== undefined && rawRevision !== null && rawRevision !== '';
-    const expectedRevision = hasExpectedRevision
-      ? parseInt(String(rawRevision).replace(/["']/g, ''), 10)
-      : null;
-
-    const updateFilter = { _id: id, userId };
-    if (expectedRevision !== null && !isNaN(expectedRevision)) {
-      updateFilter.revision = expectedRevision;
-    }
+    const updateFilter = { _id: id, userId, revision: expectedRevision };
 
     const updatedDoc = await Document.findOneAndUpdate(
       updateFilter,
@@ -298,16 +311,9 @@ export const updateDocument = async (req, res) => {
     );
 
     if (!updatedDoc) {
-      if (expectedRevision !== null && !isNaN(expectedRevision)) {
-        const existing = await Document.findOne({ _id: id, userId });
-        if (existing) {
-          return res.status(409).json({
-            error: 'Conflict: Document revision mismatch',
-            currentRevision: existing.revision,
-          });
-        }
-      }
-      return res.status(404).json({ error: 'Document not found or access denied' });
+      return res.status(409).json({
+        error: 'Conflict: Document revision mismatch or concurrent modification',
+      });
     }
 
     res.setHeader('ETag', `"${updatedDoc.revision}"`);

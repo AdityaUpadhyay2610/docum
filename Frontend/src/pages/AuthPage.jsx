@@ -40,11 +40,39 @@ export default function AuthPage({ defaultMode = 'login' }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Google account linking with existing password account
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [pendingGoogleCredential, setPendingGoogleCredential] = useState('');
+  const [linkPassword, setLinkPassword] = useState('');
+  const [linkLoading, setLinkLoading] = useState(false);
+  const [linkError, setLinkError] = useState(null);
+
   const googleBtnContainerRef = useRef(null);
 
   const { login, register, googleAuth, continueAsGuest } = useAuth();
 
   const passwordStrength = getPasswordStrength(password);
+
+  const handleConfirmLink = async (e) => {
+    e?.preventDefault();
+    if (!linkPassword || !pendingGoogleCredential) return;
+    setLinkLoading(true);
+    setLinkError(null);
+    try {
+      await googleAuth({
+        credential: pendingGoogleCredential,
+        password: linkPassword,
+      });
+      setShowLinkModal(false);
+      setPendingGoogleCredential('');
+      setLinkPassword('');
+    } catch (err) {
+      console.error('Google account linking error:', err);
+      setLinkError(err.message || 'Incorrect password. Please verify and try again.');
+    } finally {
+      setLinkLoading(false);
+    }
+  };
 
   // Initialize Google Identity Services
   useEffect(() => {
@@ -63,6 +91,12 @@ export default function AuthPage({ defaultMode = 'login' }) {
                 await googleAuth({ credential: response.credential });
               } catch (err) {
                 console.error('Google auth error:', err);
+                if (err.code === 'PASSWORD_REQUIRED_TO_LINK') {
+                  setPendingGoogleCredential(response.credential);
+                  setShowLinkModal(true);
+                  setError(null);
+                  return;
+                }
                 setError(err.message || 'Google authentication failed.');
               } finally {
                 setLoading(false);
@@ -461,6 +495,57 @@ export default function AuthPage({ defaultMode = 'login' }) {
           </div>
         </div>
 
+      {/* Account Linking Modal */}
+      {showLinkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-neutral-200 space-y-4">
+            <div className="flex items-center gap-3 text-neutral-900 font-bold text-base">
+              <span className="p-2 bg-blue-50 text-blue-600 rounded-xl">🔗</span>
+              <span>Link Google Account</span>
+            </div>
+            <p className="text-xs text-neutral-600 leading-relaxed">
+              An existing account was found for your Google email. Please enter your account password to confirm ownership and link Google sign-in.
+            </p>
+            {linkError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-xs font-medium">
+                {linkError}
+              </div>
+            )}
+            <form onSubmit={handleConfirmLink} className="space-y-3">
+              <input
+                type="password"
+                placeholder="Account password"
+                value={linkPassword}
+                onChange={(e) => setLinkPassword(e.target.value)}
+                required
+                autoFocus
+                className="w-full px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+              />
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLinkModal(false);
+                    setPendingGoogleCredential('');
+                    setLinkPassword('');
+                    setLinkError(null);
+                  }}
+                  className="flex-1 py-2 px-3 border border-neutral-200 hover:bg-neutral-50 rounded-xl text-xs font-semibold text-neutral-600 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={linkLoading || !linkPassword}
+                  className="flex-1 py-2 px-3 bg-[#0B3B60] hover:bg-[#072844] text-white rounded-xl text-xs font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  {linkLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span>Confirm & Link</span>}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );

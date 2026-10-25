@@ -12,6 +12,7 @@ import {
   setError,
   setSaveStatus,
   setActiveBlockId,
+  clearDecryptedContent,
 } from '../store/slices/documentSlice';
 import { setSidebarOpen, toggleSidebar } from '../store/slices/uiSlice';
 import Sidebar from '../components/layout/sidebar/sidebar';
@@ -28,13 +29,19 @@ import useUndoRedo from '../features/editor/hooks/useUndoRedo';
 import { useWordStats } from '../features/editor/hooks/useWordStats';
 import GuestRegisterModal from '../components/auth/GuestRegisterModal';
 import { useAuth } from '../context/AuthContext';
+import { useVault } from '../context/VaultContext';
+import {
+  VaultSetupModal,
+  VaultUnlockModal,
+  VaultChangePassphraseModal,
+} from '../components/vault';
 import {
   EditorSettingsProvider,
   useEditorSettings,
 } from '../context/EditorSettingsContext';
 import { exportToDocx } from '../services/docxExport';
 import { printDocument } from '../services/printService';
-import { Loader2, AlertTriangle, Plus, RefreshCw } from 'lucide-react';
+import { Loader2, AlertTriangle, Plus, RefreshCw, Lock } from 'lucide-react';
 
 const GUEST_STARTER_DOC = {
   _id: 'guest-starter-1',
@@ -100,19 +107,13 @@ const GUEST_STARTER_DOC = {
     {
       id: 'b10',
       type: 'table',
-      headers: ['Word Capability', 'Workspace Status', 'Export Format'],
+      headers: ['Feature', 'Document Workshops Word', 'Standard Editor'],
       rows: [
-        ['Ribbon Panels (Home, Insert, Layout, Review, View, Help)', '✅ Complete', 'Full Visual Ribbon'],
-        ['Page Setup (Margins, A4/Letter, Page Colors, Rulers)', '✅ Integrated', 'Custom Print Canvas'],
-        ['Document Headings & Outline Navigation', '✅ Real-time', 'Click-to-jump Pane'],
-        ['DOCX Word File Generation', '✅ Supported', 'Instant .docx Download'],
+        ['Real-time AutoSave', 'Instant debounced sync', 'Manual save only'],
+        ['Word Ribbon Tabs', 'Home, Insert, Layout, Design, View', 'Basic formatting bar'],
+        ['Pagination / Rulers', 'Exact multi-page layout', 'Single endless scroll'],
+        ['Document Export', 'Native .docx & clean PDF print', 'Basic HTML export only'],
       ],
-    },
-    {
-      id: 'b11',
-      type: 'quote',
-      text: '“Simplicity is prerequisite for reliability.” — Edsger W. Dijkstra',
-      style: { italic: true, color: '#475569' },
     },
   ],
 };
@@ -126,6 +127,19 @@ function WorkspaceContent() {
     openRegisterModal,
     closeRegisterModal,
   } = useAuth();
+
+  const {
+    isVaultEnabled,
+    isUnlocked,
+    masterKey,
+    openUnlockModal,
+    isUnlockModalOpen,
+    closeUnlockModal,
+    isSetupModalOpen,
+    closeSetupModal,
+    isChangeModalOpen,
+    closeChangeModal,
+  } = useVault();
 
   const {
     setShowFindReplace,
@@ -142,6 +156,7 @@ function WorkspaceContent() {
   } = useSelector((state) => state.document);
   const isSidebarOpen = useSelector((state) => state.ui.isSidebarOpen);
   const [pageInfo, setPageInfo] = useState({ pageCount: 1, currentPage: 1 });
+  const [conflictState, setConflictState] = useState(null);
 
   // AutoSave hook
   const { saveStatus: internalSaveStatus, queueAutoSave, saveImmediate } = useAutoSave(
@@ -170,6 +185,15 @@ function WorkspaceContent() {
     dispatch(setSaveStatus(internalSaveStatus));
   }, [internalSaveStatus, dispatch]);
 
+  // Handle 409 conflict events from useAutoSave
+  useEffect(() => {
+    const handleConflict = (e) => {
+      setConflictState(e.detail);
+    };
+    window.addEventListener('document:conflict', handleConflict);
+    return () => window.removeEventListener('document:conflict', handleConflict);
+  }, []);
+
   // Undo / Redo history hook
   const { undo, redo, canUndo, canRedo, pushState } = useUndoRedo(
     activeDoc?.content || [],
@@ -180,7 +204,7 @@ function WorkspaceContent() {
     }
   );
 
-  // Load a single document by ID
+  // Load a single document by ID (with masterKey for decryption if available)
   const loadDocument = useCallback(
     async (id) => {
       if (!id) return;
@@ -195,7 +219,7 @@ function WorkspaceContent() {
       }
 
       try {
-        const doc = await documentServices.getById(id);
+        const doc = await documentServices.getById(id, { masterKey });
         dispatch(setActiveDoc(doc));
         dispatch(setError(null));
       } catch (err) {
@@ -203,10 +227,10 @@ function WorkspaceContent() {
         dispatch(setError('Could not load the requested document.'));
       }
     },
-    [isGuest, documents, dispatch]
+    [isGuest, documents, dispatch, masterKey]
   );
 
-  // Initial fetch for logged in user
+  // Initial fetch / refresh for logged in user
   const fetchAllDocs = useCallback(async () => {
     if (isGuest) {
       dispatch(setLoading(false));
@@ -215,11 +239,16 @@ function WorkspaceContent() {
 
     dispatch(setError(null));
     try {
-      const data = await documentServices.getAll();
+      const data = await documentServices.getAll({ masterKey });
       dispatch(setDocuments(data || []));
       if (data && data.length > 0) {
-        const firstDoc = await documentServices.getById(data[0]._id);
-        dispatch(setActiveDoc(firstDoc));
+        const currentActiveId = activeDoc?._id || activeDoc?.id;
+        const targetId =
+          currentActiveId && data.some((d) => (d._id || d.id) === currentActiveId)
+            ? currentActiveId
+            : data[0]._id;
+        const targetDoc = await documentServices.getById(targetId, { masterKey });
+        dispatch(setActiveDoc(targetDoc));
       } else {
         dispatch(setActiveDoc(null));
       }
@@ -229,7 +258,7 @@ function WorkspaceContent() {
     } finally {
       dispatch(setLoading(false));
     }
-  }, [isGuest, dispatch]);
+  }, [isGuest, dispatch, masterKey, activeDoc]);
 
   useEffect(() => {
     if (isGuest) {
@@ -243,11 +272,11 @@ function WorkspaceContent() {
     async function initialize() {
       dispatch(setLoading(true));
       try {
-        const data = await documentServices.getAll();
+        const data = await documentServices.getAll({ masterKey });
         if (!isMounted) return;
         dispatch(setDocuments(data || []));
         if (data && data.length > 0) {
-          const firstDoc = await documentServices.getById(data[0]._id);
+          const firstDoc = await documentServices.getById(data[0]._id, { masterKey });
           if (isMounted) dispatch(setActiveDoc(firstDoc));
         } else {
           if (isMounted) dispatch(setActiveDoc(null));
@@ -266,7 +295,32 @@ function WorkspaceContent() {
     return () => {
       isMounted = false;
     };
-  }, [isGuest, dispatch]);
+  }, [isGuest, dispatch, masterKey]);
+
+  // When vault unlock state changes:
+  useEffect(() => {
+    if (isGuest) return;
+    if (masterKey) {
+      // Re-fetch with masterKey to decrypt titles, icons, and active content
+      fetchAllDocs();
+    } else {
+      // Vault locked: purge decrypted document text immediately
+      dispatch(clearDecryptedContent());
+    }
+  }, [masterKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Listen for vault:lock event
+  useEffect(() => {
+    const handleVaultLock = () => {
+      dispatch(clearDecryptedContent());
+    };
+    window.addEventListener('vault:lock', handleVaultLock);
+    window.addEventListener('vault:locked', handleVaultLock);
+    return () => {
+      window.removeEventListener('vault:lock', handleVaultLock);
+      window.removeEventListener('vault:locked', handleVaultLock);
+    };
+  }, [dispatch]);
 
   // Update browser tab title
   useEffect(() => {
@@ -277,8 +331,23 @@ function WorkspaceContent() {
     }
   }, [activeDoc?.title]);
 
-  // Create new document
-  const handleCreateDoc = async () => {
+  // Conflict resolution handlers
+  const handleReloadServerVersion = async () => {
+    if (conflictState?.docId) {
+      await loadDocument(conflictState.docId);
+    }
+    setConflictState(null);
+  };
+
+  const handleForceOverwrite = async () => {
+    if (conflictState?.docId && activeDoc) {
+      await saveImmediate(activeDoc, { expectedRevision: conflictState.currentRevision });
+    }
+    setConflictState(null);
+  };
+
+  // Create new document (default encrypted if vault is enabled)
+  const handleCreateDoc = async (options = {}) => {
     if (isGuest) {
       const newGuestDoc = {
         _id: `guest-${crypto.randomUUID()}`,
@@ -297,6 +366,39 @@ function WorkspaceContent() {
       return;
     }
 
+    // Step 3d: If user has vault enabled, new documents should be encrypted by default
+    if (isVaultEnabled && !options.asPlaintext) {
+      if (!isUnlocked) {
+        // Step 3d: If vault is locked, open the unlock modal first
+        openUnlockModal();
+        return;
+      }
+
+      try {
+        const newDoc = await documentServices.create(
+          {
+            title: 'Untitled Document',
+            icon: '🔒',
+            coverImage: '',
+            content: [
+              { id: crypto.randomUUID(), type: 'h1', text: 'New Encrypted Document' },
+              { id: crypto.randomUUID(), type: 'paragraph', text: 'Start typing in your zero-knowledge encrypted document...' },
+            ],
+          },
+          { masterKey }
+        );
+
+        dispatch(addDocument(newDoc));
+        dispatch(setActiveDoc(newDoc));
+        dispatch(setError(null));
+      } catch (err) {
+        console.error('Failed to create encrypted document:', err);
+        dispatch(setError('Failed to create encrypted document in vault.'));
+      }
+      return;
+    }
+
+    // Plaintext creation
     try {
       const newDoc = await documentServices.create({
         title: 'Untitled Document',
@@ -321,6 +423,7 @@ function WorkspaceContent() {
   const handleSelectDoc = async (id) => {
     const activeId = activeDoc?._id || activeDoc?.id;
     if (activeDoc && activeId === id) return;
+    setConflictState(null);
     await loadDocument(id);
   };
 
@@ -332,8 +435,6 @@ function WorkspaceContent() {
     dispatch(updateDocumentMeta({ id: docId, changes: { title: newTitle } }));
     queueAutoSave({ title: newTitle });
   };
-
-
 
   // Update content blocks
   const handleUpdateBlocks = (newBlocks) => {
@@ -573,6 +674,9 @@ function WorkspaceContent() {
     }
   };
 
+  const isEncryptedAndLocked =
+    activeDoc?.isEncrypted && (!isUnlocked || activeDoc?.isLocked);
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#f3f2f1]">
       {/* Guest Register / Save Modal */}
@@ -593,6 +697,11 @@ function WorkspaceContent() {
       {/* Keyboard Shortcuts Dialog */}
       <ShortcutsModal />
 
+      {/* Vault Modals */}
+      <VaultUnlockModal isOpen={isUnlockModalOpen} onClose={closeUnlockModal} />
+      <VaultSetupModal isOpen={isSetupModalOpen} onClose={closeSetupModal} />
+      <VaultChangePassphraseModal isOpen={isChangeModalOpen} onClose={closeChangeModal} />
+
       {/* Sidebar Navigation */}
       <Sidebar
         documents={documents.map((d) => ({ ...d, id: d._id || d.id }))}
@@ -611,6 +720,34 @@ function WorkspaceContent() {
 
       {/* Main Documents Workspace */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden bg-[#edebe9] min-w-0">
+        {/* Step 3b: 409 Conflict Banner */}
+        {conflictState && (
+          <div className="bg-amber-600 text-white px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs shadow-md z-30 shrink-0">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-amber-200" />
+              <span>
+                <strong>Conflict Detected:</strong> This document was modified in another session (Revision {conflictState.currentRevision}).
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleReloadServerVersion}
+                className="px-3 py-1 bg-white text-neutral-900 rounded font-semibold hover:bg-neutral-100 transition-colors shadow-xs cursor-pointer"
+              >
+                Reload server version
+              </button>
+              <button
+                type="button"
+                onClick={handleForceOverwrite}
+                className="px-3 py-1 bg-amber-800 hover:bg-amber-900 text-white rounded font-semibold transition-colors cursor-pointer"
+              >
+                Overwrite (force save)
+              </button>
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <div className="flex-1 flex flex-col items-center justify-center text-sm text-neutral-500 gap-3 bg-white">
             <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
@@ -631,6 +768,30 @@ function WorkspaceContent() {
               <RefreshCw className="w-3.5 h-3.5" />
               <span>Retry</span>
             </button>
+          </div>
+        ) : isEncryptedAndLocked ? (
+          /* Step 3b: Prominent Vault Locked Screen */
+          <div className="flex-1 flex flex-col items-center justify-center p-8 bg-neutral-100/50">
+            <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-neutral-200 p-8 text-center space-y-4">
+              <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto text-2xl shadow-xs">
+                <Lock className="w-8 h-8" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-neutral-900">Vault Locked</h2>
+                <p className="text-xs text-neutral-500 mt-1.5 leading-relaxed">
+                  This document is protected with zero-knowledge end-to-end encryption.
+                  Enter your vault passphrase to unlock and view its contents.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={openUnlockModal}
+                className="w-full py-2.5 px-4 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer"
+              >
+                <Lock className="w-4 h-4 text-amber-400" />
+                <span>Unlock Vault</span>
+              </button>
+            </div>
           </div>
         ) : activeDoc ? (
           <>

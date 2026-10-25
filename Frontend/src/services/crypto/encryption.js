@@ -129,14 +129,22 @@ export async function decryptField(dek, documentId, fieldName, envelope) {
  *   encContent: { v, iv, ct },
  * }>}
  */
-export async function encryptDocument(dek, documentId, { title, icon, content }) {
-  const [encTitle, encIcon, encContent] = await Promise.all([
-    encryptField(dek, documentId, FIELDS.TITLE,   title),
-    encryptField(dek, documentId, FIELDS.ICON,    icon),
-    encryptField(dek, documentId, FIELDS.CONTENT, JSON.stringify(content)),
-  ]);
+export async function encryptDocument(dek, documentId, { title, icon, content } = {}) {
+  const result = {};
+  const tasks = [];
 
-  return { encTitle, encIcon, encContent };
+  if (title !== undefined) {
+    tasks.push(encryptField(dek, documentId, FIELDS.TITLE, title).then((enc) => { result.encTitle = enc; }));
+  }
+  if (icon !== undefined) {
+    tasks.push(encryptField(dek, documentId, FIELDS.ICON, icon).then((enc) => { result.encIcon = enc; }));
+  }
+  if (content !== undefined) {
+    tasks.push(encryptField(dek, documentId, FIELDS.CONTENT, JSON.stringify(content)).then((enc) => { result.encContent = enc; }));
+  }
+
+  await Promise.all(tasks);
+  return result;
 }
 
 /**
@@ -145,16 +153,24 @@ export async function encryptDocument(dek, documentId, { title, icon, content })
  * @param {CryptoKey} dek
  * @param {string}    documentId
  * @param {{ encTitle, encIcon, encContent }} encFields
- * @returns {Promise<{ title: string, icon: string, content: object[] }>}
+ * @returns {Promise<{ title?: string, icon?: string, content?: object[] }>}
  */
-export async function decryptDocument(dek, documentId, { encTitle, encIcon, encContent }) {
-  const [title, icon, contentStr] = await Promise.all([
-    decryptField(dek, documentId, FIELDS.TITLE,   encTitle),
-    decryptField(dek, documentId, FIELDS.ICON,    encIcon),
-    decryptField(dek, documentId, FIELDS.CONTENT, encContent),
-  ]);
+export async function decryptDocument(dek, documentId, { encTitle, encIcon, encContent } = {}) {
+  const result = {};
+  const tasks = [];
 
-  return { title, icon, content: JSON.parse(contentStr) };
+  if (encTitle) {
+    tasks.push(decryptField(dek, documentId, FIELDS.TITLE, encTitle).then((val) => { result.title = val; }));
+  }
+  if (encIcon) {
+    tasks.push(decryptField(dek, documentId, FIELDS.ICON, encIcon).then((val) => { result.icon = val; }));
+  }
+  if (encContent) {
+    tasks.push(decryptField(dek, documentId, FIELDS.CONTENT, encContent).then((str) => { result.content = JSON.parse(str); }));
+  }
+
+  await Promise.all(tasks);
+  return result;
 }
 
 // ── DEK lifecycle helpers ─────────────────────────────────────────────────────

@@ -31,6 +31,8 @@ import {
   clearKeyCache,
 } from '../services/crypto/index.js';
 import { useAuth } from './AuthContext.jsx';
+import { useDispatch } from 'react-redux';
+import { clearDecryptedContent } from '../store/slices/documentSlice.js';
 
 const VaultContext = createContext(null);
 
@@ -38,6 +40,7 @@ const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
 export function VaultProvider({ children }) {
   const { isAuthenticated } = useAuth();
+  const dispatch = useDispatch();
 
   // In-memory Master Key (AES-256-GCM, non-extractable)
   const [masterKey, setMasterKey] = useState(null);
@@ -66,10 +69,11 @@ export function VaultProvider({ children }) {
       clearTimeout(inactivityTimerRef.current);
       inactivityTimerRef.current = null;
     }
+    dispatch(clearDecryptedContent());
     // Notify application and keyCache that vault is locked
     window.dispatchEvent(new CustomEvent('vault:lock'));
     window.dispatchEvent(new CustomEvent('vault:locked'));
-  }, []);
+  }, [dispatch]);
 
   // ── Auto-lock on inactivity ────────────────────────────────────────────────
   const resetInactivityTimer = useCallback(() => {
@@ -348,8 +352,8 @@ export function VaultProvider({ children }) {
     const cryptoResult = await cryptoChangePassphrase(
       currentPassphrase,
       newPassphrase,
-      newRecoveryBytes,
-      currentMeta
+      currentMeta,
+      newRecoveryBytes
     );
 
     // Persist new wrapped keys with password re-authentication on server

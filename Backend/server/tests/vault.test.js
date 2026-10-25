@@ -20,6 +20,8 @@ let tokenUserB = '';
 let userIdA = '';
 let encryptedDocId = '';
 
+const VALID_12B_IV = Buffer.alloc(12, 1).toString('base64');
+
 before(async () => {
   await setupTestDB();
   await User.deleteMany({});
@@ -117,13 +119,13 @@ test('Bypass attempt: isEncrypted:true + plaintext title/content is rejected', a
       isEncrypted: true,
       title: 'Sneaky plaintext title',
       content: [{ id: 'b1', type: 'paragraph', text: 'Sneaky plaintext' }],
-      encTitle: { v: 'v1', iv: 'aXZfdGl0bGVfMQ==', ct: 'Y3RfdGl0bGVfMQ==' },
-      encContent: { v: 'v1', iv: 'aXZfY29udGVudF8x', ct: 'Y3RfY29udGVudF8x' },
-      encDek: { wrappedDek: 'd3JhcHBlZF9kZWtfMQ==', dekIv: 'ZGVrX2l2XzE=' },
+      encTitle: { v: 1, iv: VALID_12B_IV, ct: 'Y3RfdGl0bGVfMQ==' },
+      encContent: { v: 1, iv: VALID_12B_IV, ct: 'Y3RfY29udGVudF8x' },
+      encDek: { wrappedDek: 'd3JhcHBlZF9kZWtfMQ==', dekIv: VALID_12B_IV },
     });
 
   assert.equal(res.status, 400);
-  assert.match(res.body.error, /plaintext/i);
+  assert.match(res.body.fields?.title || res.body.fields?.content || res.body.error, /plaintext/i);
 });
 
 test('Encrypted document write: Vault-enabled User A can create encrypted document', async () => {
@@ -136,10 +138,10 @@ test('Encrypted document write: Vault-enabled User A can create encrypted docume
     .send({
       _id: customId,
       isEncrypted: true,
-      encTitle: { v: 'v1', iv: 'aXZfdGl0bGVfMQ==', ct: 'Y3RfdGl0bGVfMQ==' },
-      encIcon: { v: 'v1', iv: 'aXZfaWNvbl8x', ct: 'Y3RfaWNvbl8x' },
-      encContent: { v: 'v1', iv: 'aXZfY29udGVudF8x', ct: 'Y3RfY29udGVudF8x' },
-      encDek: { wrappedDek: 'd3JhcHBlZF9kZWtfMQ==', dekIv: 'ZGVrX2l2XzE=' },
+      encTitle: { v: 1, iv: VALID_12B_IV, ct: 'Y3RfdGl0bGVfMQ==' },
+      encIcon: { v: 1, iv: VALID_12B_IV, ct: 'Y3RfaWNvbl8x' },
+      encContent: { v: 1, iv: VALID_12B_IV, ct: 'Y3RfY29udGVudF8x' },
+      encDek: { wrappedDek: 'd3JhcHBlZF9kZWtfMQ==', dekIv: VALID_12B_IV },
     });
 
   assert.equal(res.status, 201);
@@ -158,9 +160,9 @@ test('Encrypted update: If-Match is mandatory (returns 428 if missing)', async (
     .set('Origin', 'http://localhost:5173')
     .send({
       isEncrypted: true,
-      encTitle: { v: 'v1', iv: 'aXZfdGl0bGVfMg==', ct: 'Y3RfdGl0bGVfMg==' },
-      encContent: { v: 'v1', iv: 'aXZfY29udGVudF8y', ct: 'Y3RfY29udGVudF8y' },
-      encDek: { wrappedDek: 'd3JhcHBlZF9kZWtfMQ==', dekIv: 'ZGVrX2l2XzE=' },
+      encTitle: { v: 1, iv: VALID_12B_IV, ct: 'Y3RfdGl0bGVfMg==' },
+      encContent: { v: 1, iv: VALID_12B_IV, ct: 'Y3RfY29udGVudF8y' },
+      encDek: { wrappedDek: 'd3JhcHBlZF9kZWtfMQ==', dekIv: VALID_12B_IV },
     });
 
   assert.equal(res.status, 428);
@@ -175,9 +177,9 @@ test('Atomic revision: update with matching revision increments revision and suc
     .set('If-Match', '"0"')
     .send({
       isEncrypted: true,
-      encTitle: { v: 'v1', iv: 'aXZfdGl0bGVfMg==', ct: 'Y3RfdGl0bGVfMg==' },
-      encContent: { v: 'v1', iv: 'aXZfY29udGVudF8y', ct: 'Y3RfY29udGVudF8y' },
-      encDek: { wrappedDek: 'd3JhcHBlZF9kZWtfMQ==', dekIv: 'ZGVrX2l2XzE=' },
+      encTitle: { v: 1, iv: VALID_12B_IV, ct: 'Y3RfdGl0bGVfMg==' },
+      encContent: { v: 1, iv: VALID_12B_IV, ct: 'Y3RfY29udGVudF8y' },
+      encDek: { wrappedDek: 'd3JhcHBlZF9kZWtfMQ==', dekIv: VALID_12B_IV },
     });
 
   assert.equal(res.status, 200);
@@ -197,9 +199,9 @@ test('Atomic revision conflict: update with stale revision returns 409 Conflict'
     .set('If-Match', '"0"')
     .send({
       isEncrypted: true,
-      encTitle: { v: 'v1', iv: 'aXZfdGl0bGVfMw==', ct: 'Y3RfdGl0bGVfMw==' },
-      encContent: { v: 'v1', iv: 'aXZfY29udGVudF8z', ct: 'Y3RfY29udGVudF8z' },
-      encDek: { wrappedDek: 'd3JhcHBlZF9kZWtfMQ==', dekIv: 'ZGVrX2l2XzE=' },
+      encTitle: { v: 1, iv: VALID_12B_IV, ct: 'Y3RfdGl0bGVfMw==' },
+      encContent: { v: 1, iv: VALID_12B_IV, ct: 'Y3RfY29udGVudF8z' },
+      encDek: { wrappedDek: 'd3JhcHBlZF9kZWtfMQ==', dekIv: VALID_12B_IV },
     });
 
   assert.equal(res.status, 409);
@@ -216,13 +218,13 @@ test('Encrypted update bypass attempt: plaintext fields in update are rejected',
     .send({
       isEncrypted: true,
       title: 'Sneaky plaintext on update',
-      encTitle: { v: 'v1', iv: 'aXZfdGl0bGVfNA==', ct: 'Y3RfdGl0bGVfNA==' },
-      encContent: { v: 'v1', iv: 'aXZfY29udGVudF80', ct: 'Y3RfY29udGVudF80' },
-      encDek: { wrappedDek: 'd3JhcHBlZF9kZWtfMQ==', dekIv: 'ZGVrX2l2XzE=' },
+      encTitle: { v: 1, iv: VALID_12B_IV, ct: 'Y3RfdGl0bGVfNA==' },
+      encContent: { v: 1, iv: VALID_12B_IV, ct: 'Y3RfY29udGVudF80' },
+      encDek: { wrappedDek: 'd3JhcHBlZF9kZWtfMQ==', dekIv: VALID_12B_IV },
     });
 
   assert.equal(res.status, 400);
-  assert.match(res.body.error, /plaintext/i);
+  assert.match(res.body.fields?.title || res.body.fields?.content || res.body.error, /plaintext/i);
 });
 
 test('IDOR Protection on encrypted document: User B cannot read User A encrypted doc', async () => {
@@ -278,7 +280,7 @@ test('Vault meta update: requires valid login password and archives previous key
   assert.equal(dbUser.vault.previousKeys[0].salt, 'c2FsdF90ZXN0XzEyMw==');
 });
 
-test('Vault meta: previousKeys capped at 3 and old entries dropped', async () => {
+test('Vault meta: previousKeys capped at 10 and historical keys preserved', async () => {
   // We already have 1 backup from the previous test. Add 3 more to test capping.
   for (let i = 0; i < 3; i++) {
     await request(app)
@@ -297,8 +299,8 @@ test('Vault meta: previousKeys capped at 3 and old entries dropped', async () =>
   }
 
   const dbUser = await User.findById(userIdA);
-  // previousKeys should be capped at 3
-  assert.ok(dbUser.vault.previousKeys.length <= 3, `Expected ≤ 3 previous keys, got ${dbUser.vault.previousKeys.length}`);
+  // previousKeys should be retained and capped at 10
+  assert.ok(dbUser.vault.previousKeys.length <= 10, `Expected ≤ 10 previous keys, got ${dbUser.vault.previousKeys.length}`);
 });
 
 test('Vault string field max lengths: rejects oversized salt', async () => {

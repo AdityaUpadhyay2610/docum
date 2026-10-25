@@ -196,9 +196,10 @@ export async function exportKeyRaw(key) {
 
 // ── Base64 helpers ────────────────────────────────────────────────────────────
 
-/** Uint8Array → base64 string with chunked conversion to prevent call stack overflow */
+const CHUNK_SIZE = 8192;
+
+/** Uint8Array → base64 string with chunked conversion (8192 bytes/chunk) to prevent call stack overflow */
 export function toBase64(bytes) {
-  const CHUNK_SIZE = 0x8000;
   let binary = '';
   for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
     const chunk = bytes.subarray(i, i + CHUNK_SIZE);
@@ -207,13 +208,16 @@ export function toBase64(bytes) {
   return btoa(binary);
 }
 
-/** base64 string → Uint8Array */
+/** base64 string → Uint8Array with chunked processing (8192 chars/chunk) */
 export function fromBase64(b64) {
   const binary = atob(b64);
   const len = binary.length;
   const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binary.charCodeAt(i);
+  for (let i = 0; i < len; i += CHUNK_SIZE) {
+    const end = Math.min(i + CHUNK_SIZE, len);
+    for (let j = i; j < end; j++) {
+      bytes[j] = binary.charCodeAt(j);
+    }
   }
   return bytes;
 }

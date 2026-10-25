@@ -3,7 +3,7 @@ import documentServices from '../../../services/documentServices';
 import { useVault } from '../../../context/VaultContext';
 
 /**
- * Custom hook for handling debounced auto-saving with state management
+ * Custom hook for handling debounced auto-saving with state management and vault encryption
  * @param {Object} activeDoc - Current active document object
  * @param {Function} onDocumentUpdated - Callback to notify parent of synced updates
  * @param {number} debounceMs - Debounce delay in milliseconds (default: 600ms)
@@ -39,8 +39,29 @@ export function useAutoSave(activeDoc, onDocumentUpdated, debounceMs = 600, isGu
     };
   }, []);
 
+  // Step 3a: On vault lock, cancel any pending debounced autosaves of encrypted documents immediately
+  useEffect(() => {
+    const handleVaultLock = () => {
+      if (activeDoc?.isEncrypted) {
+        if (timerRef.current) {
+          clearTimeout(timerRef.current);
+          timerRef.current = null;
+        }
+        pendingChangesRef.current = {};
+        setSaveStatus('saved');
+      }
+    };
+
+    window.addEventListener('vault:lock', handleVaultLock);
+    window.addEventListener('vault:locked', handleVaultLock);
+    return () => {
+      window.removeEventListener('vault:lock', handleVaultLock);
+      window.removeEventListener('vault:locked', handleVaultLock);
+    };
+  }, [activeDoc?.isEncrypted]);
+
   const saveToBackend = useCallback(
-    async (docId, updates) => {
+    async (docId, updates, options = {}) => {
       if (isGuest) {
         setSaveStatus('guest');
         if (onDocumentUpdated) {
@@ -50,17 +71,22 @@ export function useAutoSave(activeDoc, onDocumentUpdated, debounceMs = 600, isGu
       }
 
       if (!docId || Object.keys(updates).length === 0) return;
+
+      // Never attempt to save encrypted doc without masterKey
+      if (activeDoc?.isEncrypted && !masterKey) {
+        return;
+      }
+
       setSaveStatus('saving');
       try {
         const fullUpdates = {
           ...updates,
           isEncrypted: activeDoc?.isEncrypted,
           encDek:      activeDoc?.encDek,
-          _dek:        activeDoc?._dek,
         };
         const updated = await documentServices.update(docId, fullUpdates, {
           masterKey,
-          expectedRevision: activeDoc?.revision,
+          expectedRevision: options.expectedRevision ?? activeDoc?.revision,
         });
         if (onDocumentUpdated) {
           onDocumentUpdated(updated);
@@ -72,7 +98,12 @@ export function useAutoSave(activeDoc, onDocumentUpdated, debounceMs = 600, isGu
           setSaveStatus('conflict');
           window.dispatchEvent(
             new CustomEvent('document:conflict', {
-              detail: { docId, activeDoc, currentRevision: err.data?.currentRevision },
+              detail: {
+                docId,
+                activeDoc,
+                currentRevision: err.data?.currentRevision,
+                error: err.data?.error || err.message,
+              },
             })
           );
         } else {
@@ -96,6 +127,11 @@ export function useAutoSave(activeDoc, onDocumentUpdated, debounceMs = 600, isGu
         return;
       }
 
+      // Do not queue auto-save if encrypted doc is locked
+      if (activeDoc?.isEncrypted && !masterKey) {
+        return;
+      }
+
       // Merge changes
       pendingChangesRef.current = {
         ...pendingChangesRef.current,
@@ -114,11 +150,11 @@ export function useAutoSave(activeDoc, onDocumentUpdated, debounceMs = 600, isGu
         saveToBackend(docId, changesToSave);
       }, debounceMs);
     },
-    [activeDoc, isGuest, debounceMs, onDocumentUpdated, saveToBackend]
+    [activeDoc, isGuest, debounceMs, onDocumentUpdated, saveToBackend, masterKey]
   );
 
   const saveImmediate = useCallback(
-    async (updates) => {
+    async (updates, options = {}) => {
       const docId = activeDoc?._id || activeDoc?.id;
       if (!docId) return;
 
@@ -135,20 +171,33 @@ export function useAutoSave(activeDoc, onDocumentUpdated, debounceMs = 600, isGu
         return;
       }
 
+      if (activeDoc?.isEncrypted && !masterKey) {
+        return;
+      }
+
       const merged = {
         ...pendingChangesRef.current,
         ...updates,
       };
       pendingChangesRef.current = {};
-      await saveToBackend(docId, merged);
+      await saveToBackend(docId, merged, options);
     },
-    [activeDoc, isGuest, onDocumentUpdated, saveToBackend]
+    [activeDoc, isGuest, onDocumentUpdated, saveToBackend, masterKey]
   );
+
+  const cancelAutoSave = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    pendingChangesRef.current = {};
+  }, []);
 
   return {
     saveStatus,
     queueAutoSave,
     saveImmediate,
+    cancelAutoSave,
   };
 }
 

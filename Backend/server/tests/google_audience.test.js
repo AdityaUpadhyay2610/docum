@@ -147,3 +147,82 @@ test('POST /api/auth/google returns 401 when verifyIdToken returns wrong audienc
     OAuth2Client.prototype.verifyIdToken = originalVerify;
   }
 });
+
+test('Google linking full flow: PASSWORD_REQUIRED_TO_LINK -> wrong password rejected -> correct password links and revokes other sessions', async () => {
+  const originalVerify = OAuth2Client.prototype.verifyIdToken;
+
+  // 1. Create a verified local account with an existing session
+  const regRes = await request(app)
+    .post('/api/auth/register')
+    .set('Origin', 'http://localhost:5173')
+    .send({
+      name: 'Link Tester',
+      email: 'linktester@example.com',
+      password: 'Password123!',
+      confirmPassword: 'Password123!',
+    });
+  assert.equal(regRes.status, 201);
+
+  // Mark verified in DB and add an existing session
+  const localUser = await User.findOne({ email: 'linktester@example.com' });
+  localUser.isEmailVerified = true;
+  localUser.sessions = [{ hash: 'existing-session-hash-1', family: 'old-family-1' }];
+  await localUser.save();
+
+  // 2. Mock Google verification returning matching email
+  OAuth2Client.prototype.verifyIdToken = async () => ({
+    getPayload: () => ({
+      aud:            process.env.GOOGLE_CLIENT_ID,
+      sub:            'google-sub-linktest-999',
+      email:          'linktester@example.com',
+      email_verified: true,
+      name:           'Link Tester Google',
+    }),
+  });
+
+  try {
+    // 3. Step A: Call /auth/google without password -> PASSWORD_REQUIRED_TO_LINK
+    const resNoPass = await request(app)
+      .post('/api/auth/google')
+      .set('Origin', 'http://localhost:5173')
+      .send({ credential: 'valid-google-token' });
+
+    assert.equal(resNoPass.status, 400);
+    assert.equal(resNoPass.body.code, 'PASSWORD_REQUIRED_TO_LINK');
+
+    // Confirm googleId not set
+    let dbUser = await User.findOne({ email: 'linktester@example.com' });
+    assert.equal(dbUser.googleId, null);
+    assert.equal(dbUser.sessions.length, 1);
+
+    // 4. Step B: Call with wrong password -> 401 INVALID_PASSWORD_FOR_LINK
+    const resWrongPass = await request(app)
+      .post('/api/auth/google')
+      .set('Origin', 'http://localhost:5173')
+      .send({ credential: 'valid-google-token', password: 'WrongPassword123!' });
+
+    assert.equal(resWrongPass.status, 401);
+    assert.equal(resWrongPass.body.code, 'INVALID_PASSWORD_FOR_LINK');
+
+    // Confirm googleId still not set
+    dbUser = await User.findOne({ email: 'linktester@example.com' });
+    assert.equal(dbUser.googleId, null);
+
+    // 5. Step C: Call with correct password -> 200 Linked, other sessions revoked
+    const resSuccess = await request(app)
+      .post('/api/auth/google')
+      .set('Origin', 'http://localhost:5173')
+      .send({ credential: 'valid-google-token', password: 'Password123!' });
+
+    assert.equal(resSuccess.status, 200);
+    assert.ok(resSuccess.body.accessToken, 'Access token should be issued');
+
+    dbUser = await User.findOne({ email: 'linktester@example.com' });
+    assert.equal(dbUser.googleId, 'google-sub-linktest-999');
+    // Previous session 'old-family-1' must have been revoked
+    assert.ok(!dbUser.sessions.some((s) => s.family === 'old-family-1'), 'Previous sessions revoked');
+    assert.equal(dbUser.sessions.length, 1, 'Only the new session exists');
+  } finally {
+    OAuth2Client.prototype.verifyIdToken = originalVerify;
+  }
+});

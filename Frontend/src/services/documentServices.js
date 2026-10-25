@@ -166,9 +166,13 @@ export const documentServices = {
 
     const isEncrypted = updates.isEncrypted || Boolean(updates.encDek) || Boolean(masterKey);
 
-    if (isEncrypted && masterKey) {
+    if (isEncrypted) {
+      if (!masterKey) {
+        throw new Error('Vault is locked. Unlock vault to edit or save this encrypted document.');
+      }
+
       // Get or unwrap DEK
-      let dek = getDEK(id) || updates._dek;
+      let dek = getDEK(id);
       if (!dek && updates.encDek) {
         dek = await unwrapDEK(masterKey, updates.encDek.wrappedDek, updates.encDek.dekIv);
       }
@@ -178,19 +182,25 @@ export const documentServices = {
       }
       setDEK(id, dek);
 
-      const encFields = await encryptDocument(dek, id, {
-        title: updates.title ?? 'Untitled',
-        icon: updates.icon ?? '📝',
-        content: updates.content ?? [],
-      });
+      const fieldsToEncrypt = {};
+      if (updates.title !== undefined) fieldsToEncrypt.title = updates.title;
+      if (updates.icon !== undefined) fieldsToEncrypt.icon = updates.icon;
+      if (updates.content !== undefined) fieldsToEncrypt.content = updates.content;
 
       const payload = {
         isEncrypted: true,
-        encTitle: encFields.encTitle,
-        encIcon: encFields.encIcon,
-        encContent: encFields.encContent,
-        coverImage: updates.coverImage ?? '',
       };
+
+      if (Object.keys(fieldsToEncrypt).length > 0) {
+        const encFields = await encryptDocument(dek, id, fieldsToEncrypt);
+        if (encFields.encTitle) payload.encTitle = encFields.encTitle;
+        if (encFields.encIcon) payload.encIcon = encFields.encIcon;
+        if (encFields.encContent) payload.encContent = encFields.encContent;
+      }
+
+      if (updates.coverImage !== undefined) {
+        payload.coverImage = updates.coverImage;
+      }
       if (updates.encDek) {
         payload.encDek = updates.encDek;
       }
@@ -205,23 +215,30 @@ export const documentServices = {
       const res = await api.put(`/documents/${id}`, payload, { headers });
       return {
         ...res,
-        title: updates.title,
-        icon: updates.icon,
-        content: updates.content,
+        ...(updates.title !== undefined && { title: updates.title }),
+        ...(updates.icon !== undefined && { icon: updates.icon }),
+        ...(updates.content !== undefined && { content: updates.content }),
       };
     }
 
-    // Plaintext update
-    const validationError = validateDocumentData(updates, { partial: true });
+    // Plaintext update - send only changed fields
+    const payload = {};
+    if (updates.title !== undefined) payload.title = updates.title;
+    if (updates.icon !== undefined) payload.icon = updates.icon;
+    if (updates.coverImage !== undefined) payload.coverImage = updates.coverImage;
+    if (updates.content !== undefined) payload.content = updates.content;
+
+    const validationError = validateDocumentData(payload, { partial: true });
     if (validationError) throw new Error(validationError);
 
     const headers = {};
     const rev = expectedRevision ?? updates.revision;
     if (rev !== undefined && rev !== null) {
       headers['If-Match'] = `"${rev}"`;
+      payload.revision = rev;
     }
 
-    return api.put(`/documents/${id}`, updates, { headers });
+    return api.put(`/documents/${id}`, payload, { headers });
   },
 
   /**

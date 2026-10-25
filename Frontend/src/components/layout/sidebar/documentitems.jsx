@@ -1,11 +1,16 @@
 import { useState } from 'react';
-import { Trash2, Check, X } from 'lucide-react';
+import { Trash2, Check, X, Lock } from 'lucide-react';
 
 export default function DocumentItem({ doc, document: documentProp, isActive, onSelect, onDelete }) {
   const item = doc || documentProp || {};
   const docId = item.id || item._id;
-  const docIcon = item.icon || '📝';
-  const docTitle = item.title && item.title.trim() !== '' ? item.title : 'Untitled';
+  const isEncrypted = Boolean(item.isEncrypted);
+  const isLocked = Boolean(item.isLocked);
+
+  const docIcon = isLocked ? '🔒' : (item.icon || (isEncrypted ? '🔒' : '📝'));
+  const docTitle = isLocked
+    ? '[Encrypted]'
+    : (item.title && item.title.trim() !== '' ? item.title : 'Untitled');
 
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
 
@@ -39,6 +44,12 @@ export default function DocumentItem({ doc, document: documentProp, isActive, on
         <span className="truncate text-xs sm:text-sm">
           {docTitle}
         </span>
+        {isEncrypted && (
+          <Lock
+            className={`w-3 h-3 shrink-0 ${isLocked ? 'text-amber-500' : 'text-emerald-600'}`}
+            title={isLocked ? 'Encrypted (Vault Locked)' : 'End-to-End Encrypted'}
+          />
+        )}
       </div>
 
       {/* Delete Controls / Confirmation */}

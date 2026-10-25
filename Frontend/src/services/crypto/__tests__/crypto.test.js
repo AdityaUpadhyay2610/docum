@@ -446,6 +446,68 @@ describe('Chunked Base64 (1MB payload)', () => {
     expect(decoded[50000]).toBe(50000 % 256);
     expect(decoded[oneMB - 1]).toBe((oneMB - 1) % 256);
   });
+
+  it('round-trips a 5MB Uint8Array without stack overflow', () => {
+    const fiveMB = 5 * 1024 * 1024;
+    const largeArray = new Uint8Array(fiveMB);
+    for (let i = 0; i < fiveMB; i += 4096) {
+      largeArray[i] = (i / 4096) % 256;
+    }
+
+    const b64 = toBase64(largeArray);
+    expect(typeof b64).toBe('string');
+    expect(b64.length).toBeGreaterThan(fiveMB);
+
+    const decoded = fromBase64(b64);
+    expect(decoded.length).toBe(fiveMB);
+    expect(decoded[0]).toBe(0);
+    expect(decoded[4096]).toBe(1);
+    expect(decoded[fiveMB - 4096]).toBe(((fiveMB - 4096) / 4096) % 256);
+  });
+});
+
+describe('Multiple passphrase changes data persistence', () => {
+  it('decrypts a document after four passphrase changes', async () => {
+    const { rawBytes: recovBytes } = generateRecoveryKey();
+    let currentMeta = await setupVault('Passphrase-Initial-12345!', recovBytes);
+
+    // Encrypt a document under the initial setup
+    const { dek: originalDek, wrappedDek, dekIv } = await generateAndWrapDEK(currentMeta.masterKey);
+    const envelope = await encryptField(originalDek, 'doc-four-changes', FIELDS.TITLE, 'Secret-Doc-Persists');
+
+    const passphrases = [
+      'Passphrase-Change-One-12345!',
+      'Passphrase-Change-Two-12345!',
+      'Passphrase-Change-Three-12345!',
+      'Passphrase-Change-Four-12345!',
+    ];
+
+    let oldPass = 'Passphrase-Initial-12345!';
+    for (const newPass of passphrases) {
+      const changeResult = await changePassphrase(oldPass, newPass, currentMeta);
+      currentMeta = {
+        salt: changeResult.salt,
+        kdfParams: changeResult.kdfParams,
+        wrappedMasterKey: changeResult.wrappedMasterKey,
+        wrappedMasterKeyIv: changeResult.wrappedMasterKeyIv,
+        recoveryWrappedKey: changeResult.recoveryWrappedKey,
+        recoveryWrappedKeyIv: changeResult.recoveryWrappedKeyIv,
+      };
+      oldPass = newPass;
+    }
+
+    // Now unlock with the 4th new passphrase
+    const finalMasterKey = await unlockVault('Passphrase-Change-Four-12345!', currentMeta);
+    expect(finalMasterKey).toBeDefined();
+
+    // Unwrap the original DEK using finalMasterKey
+    const unwrappedDek = await unwrapDEK(finalMasterKey, wrappedDek, dekIv);
+    const decryptedText = await decryptField(unwrappedDek, 'doc-four-changes', FIELDS.TITLE, envelope);
+    expect(decryptedText).toBe('Secret-Doc-Persists');
+
+    // Confirm that old passphrase fails
+    await expect(unlockVault('Passphrase-Initial-12345!', currentMeta)).rejects.toThrow();
+  }, 30000);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

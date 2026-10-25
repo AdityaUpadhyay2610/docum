@@ -5,10 +5,7 @@ import { verifyGoogleToken } from './auth.controller.js';
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /** Maximum number of previous key backups to retain per user. */
-const MAX_PREVIOUS_KEYS = 3;
-
-/** Previous key entries older than this are dropped (30 days in ms). */
-const PREVIOUS_KEYS_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const MAX_PREVIOUS_KEYS = 10;
 
 /**
  * Maximum age of a Google ID token used as re-auth for vault meta updates.
@@ -19,17 +16,14 @@ const GOOGLE_REAUTH_MAX_AGE_S = 5 * 60; // 5 minutes
 // ── Helper: prune previousKeys ────────────────────────────────────────────────
 
 /**
- * Trim the previousKeys array to the last MAX_PREVIOUS_KEYS entries,
- * discarding any entries older than PREVIOUS_KEYS_MAX_AGE_MS.
+ * Trim the previousKeys array to the last MAX_PREVIOUS_KEYS entries.
+ * Capped by count only to ensure historical keys are never dropped by age.
  *
  * @param {object[]} previousKeys
  * @returns {object[]}
  */
 function prunePreviousKeys(previousKeys) {
-  const cutoff = new Date(Date.now() - PREVIOUS_KEYS_MAX_AGE_MS);
-  return previousKeys
-    .filter((k) => !k.replacedAt || new Date(k.replacedAt) >= cutoff)
-    .slice(-MAX_PREVIOUS_KEYS); // keep only the last N
+  return previousKeys.slice(-MAX_PREVIOUS_KEYS);
 }
 
 /**
