@@ -258,15 +258,16 @@ export async function changePassphrase(oldPassphrase, newPassphrase, newRecovery
 
 /**
  * Unlock the vault using the recovery key.
- * Returns only the in-memory Master Key; the caller must prompt for a new
- * passphrase immediately (changePassphrase).
+ * Unwraps the Master Key as EXTRACTABLE so it can be re-wrapped with a new passphrase.
  *
- * @param {string}    recoveryDisplayString - User-entered recovery key
- * @param {VaultMeta} vaultMeta
- * @returns {Promise<CryptoKey>} Non-extractable Master Key
+ * @param {string|Uint8Array} recoveryKeyInput - User-entered recovery display string or raw bytes
+ * @param {VaultMeta}         vaultMeta
+ * @returns {Promise<CryptoKey>} Extractable Master Key
  */
-export async function recoverWithKey(recoveryDisplayString, vaultMeta) {
-  const recovBytes = parseRecoveryKey(recoveryDisplayString);
+export async function recoverWithKey(recoveryKeyInput, vaultMeta) {
+  const recovBytes = typeof recoveryKeyInput === 'string'
+    ? parseRecoveryKey(recoveryKeyInput)
+    : recoveryKeyInput;
   const recovKey   = await importRecoveryKey(recovBytes);
 
   const wrappedBytes = fromBase64(vaultMeta.recoveryWrappedKey);
@@ -276,9 +277,65 @@ export async function recoverWithKey(recoveryDisplayString, vaultMeta) {
     wrappedBytes,
     iv,
     recovKey,
-    false,
-    ['wrapKey', 'unwrapKey'],
+    true, // extractable
+    ['wrapKey', 'unwrapKey', 'encrypt', 'decrypt'],
   );
 
   return masterKey;
+}
+
+/**
+ * Complete recovery flow: reset passphrase using the recovery key.
+ * 1. Unwraps master key as EXTRACTABLE using recovery key.
+ * 2. Re-wraps with newly derived KEK from fresh passphrase.
+ * 3. Generates a new recovery key and re-wraps with it.
+ * 4. Re-imports master key as NON-EXTRACTABLE for runtime use.
+ *
+ * @param {string|Uint8Array} recoveryKeyBytes - Existing recovery key
+ * @param {string}            newPassphrase    - Fresh passphrase
+ * @param {VaultMeta}         vaultMeta        - Current vault metadata
+ * @returns {Promise<{
+ *   salt: string,
+ *   kdfParams: object,
+ *   wrappedMasterKey: string,
+ *   wrappedMasterKeyIv: string,
+ *   recoveryWrappedKey: string,
+ *   recoveryWrappedKeyIv: string,
+ *   masterKey: CryptoKey,
+ *   newRecoveryKey: string,
+ *   newRecoveryBytes: Uint8Array,
+ * }>}
+ */
+export async function resetPassphraseWithRecovery(recoveryKeyBytes, newPassphrase, vaultMeta) {
+  const masterKeyExtractable = await recoverWithKey(recoveryKeyBytes, vaultMeta);
+  const masterRawBytes = await exportKeyRaw(masterKeyExtractable);
+
+  // New salt + KEK
+  const newSalt = generateSalt();
+  const { keyBytes: newKekBytes, algorithm } = await deriveKEK(newPassphrase, newSalt);
+  const newKek = await importKEK(newKekBytes);
+
+  // Re-wrap with new KEK
+  const { wrapped: newWrappedMK, iv: newMkIv } = await wrapKey(masterKeyExtractable, newKek);
+
+  // Re-wrap with new recovery key
+  const { rawBytes: newRecovBytes, displayString: newRecoveryDisplayString } = generateRecoveryKey();
+  const newRecovKey = await importRecoveryKey(newRecovBytes);
+  const { wrapped: newRecovWrappedMK, iv: newRecovMkIv } = await wrapKey(masterKeyExtractable, newRecovKey);
+
+  // Re-import as non-extractable (active session)
+  const masterKey = await importMasterKeyNonExtractable(masterRawBytes);
+  masterRawBytes.fill(0);
+
+  return {
+    salt:                 toBase64(newSalt),
+    kdfParams:            buildKdfParamRecord(algorithm),
+    wrappedMasterKey:     toBase64(newWrappedMK),
+    wrappedMasterKeyIv:   toBase64(newMkIv),
+    recoveryWrappedKey:   toBase64(newRecovWrappedMK),
+    recoveryWrappedKeyIv: toBase64(newRecovMkIv),
+    masterKey,            // non-extractable in-memory copy
+    newRecoveryKey:       newRecoveryDisplayString,
+    newRecoveryBytes:     newRecovBytes,
+  };
 }

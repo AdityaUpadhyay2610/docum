@@ -50,6 +50,7 @@ export {
   lockVault,
   changePassphrase,
   recoverWithKey,
+  resetPassphraseWithRecovery,
   generateRecoveryKey,
   parseRecoveryKey,
 } from './vault.js';
@@ -60,3 +61,12 @@ export {
   validatePassphrase,
   strengthBarProps,
 } from './passphrase.js';
+
+export {
+  // Key Cache (in-memory, TTL, lock-purged)
+  setDEK,
+  getDEK,
+  deleteDEK,
+  clearKeyCache,
+} from './keyCache.js';
+

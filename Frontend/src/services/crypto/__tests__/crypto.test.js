@@ -63,11 +63,13 @@ import {
   lockVault,
   changePassphrase,
   recoverWithKey,
+  resetPassphraseWithRecovery,
   generateRecoveryKey,
   parseRecoveryKey,
 } from '../vault.js';
 
 import { validatePassphrase, scorePassphrase } from '../passphrase.js';
+import { setDEK, getDEK, deleteDEK, clearKeyCache } from '../keyCache.js';
 
 // ── Shared fixtures ───────────────────────────────────────────────────────────
 
@@ -419,4 +421,134 @@ describe('KDF, key wrapping, and lockVault', () => {
     expect(state.masterKey).toBeNull();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  12. Large payload chunked Base64 roundtrip (1MB)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Chunked Base64 (1MB payload)', () => {
+  it('round-trips a 1MB Uint8Array without stack overflow', () => {
+    const oneMB = 1024 * 1024;
+    const largeArray = new Uint8Array(oneMB);
+    // Fill with deterministic byte values
+    for (let i = 0; i < oneMB; i++) {
+      largeArray[i] = i % 256;
+    }
+
+    const b64 = toBase64(largeArray);
+    expect(typeof b64).toBe('string');
+    expect(b64.length).toBeGreaterThan(oneMB);
+
+    const decoded = fromBase64(b64);
+    expect(decoded.length).toBe(oneMB);
+    // Verify sample indices
+    expect(decoded[0]).toBe(0);
+    expect(decoded[50000]).toBe(50000 % 256);
+    expect(decoded[oneMB - 1]).toBe((oneMB - 1) % 256);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  13. resetPassphraseWithRecovery flow
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('resetPassphraseWithRecovery flow', () => {
+  it('unwraps master key via recovery key, re-wraps with new passphrase and new recovery key', async () => {
+    const { rawBytes: initialRecovBytes } = generateRecoveryKey();
+    const setupResult = await setupVault(PASS, initialRecovBytes);
+
+    // Encrypt a document with initial MK
+    const { dek: testDek, wrappedDek, dekIv } = await generateAndWrapDEK(setupResult.masterKey);
+    const envelope = await encryptField(testDek, DOC_ID, FIELDS.TITLE, 'recovery-reset-doc');
+
+    const vaultMeta = {
+      salt:                 setupResult.salt,
+      kdfParams:            setupResult.kdfParams,
+      wrappedMasterKey:     setupResult.wrappedMasterKey,
+      wrappedMasterKeyIv:   setupResult.wrappedMasterKeyIv,
+      recoveryWrappedKey:   setupResult.recoveryWrappedKey,
+      recoveryWrappedKeyIv: setupResult.recoveryWrappedKeyIv,
+    };
+
+    const FRESH_PASS = 'Compl3tely-Fresh-Passphrase-2026!';
+    const resetResult = await resetPassphraseWithRecovery(initialRecovBytes, FRESH_PASS, vaultMeta);
+
+    expect(resetResult.masterKey).toBeDefined();
+    expect(resetResult.newRecoveryKey).toBeDefined();
+
+    // Verify previously encrypted document can be decrypted with the new in-memory master key
+    const decryptedDek = await unwrapDEK(resetResult.masterKey, wrappedDek, dekIv);
+    const plaintext = await decryptField(decryptedDek, DOC_ID, FIELDS.TITLE, envelope);
+    expect(plaintext).toBe('recovery-reset-doc');
+
+    // Verify vault can now be unlocked with the FRESH_PASS
+    const updatedMeta = {
+      salt:                 resetResult.salt,
+      kdfParams:            resetResult.kdfParams,
+      wrappedMasterKey:     resetResult.wrappedMasterKey,
+      wrappedMasterKeyIv:   resetResult.wrappedMasterKeyIv,
+      recoveryWrappedKey:   resetResult.recoveryWrappedKey,
+      recoveryWrappedKeyIv: resetResult.recoveryWrappedKeyIv,
+    };
+    const unlockedMK = await unlockVault(FRESH_PASS, updatedMeta);
+    expect(unlockedMK).toBeDefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  14. validatePassphrase consistent return shape { valid, score, reason }
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('validatePassphrase return shape and zxcvbn evaluation', () => {
+  it('returns { valid: false, score: 0, reason: ... } for short passphrases', () => {
+    const res = validatePassphrase('short');
+    expect(res.valid).toBe(false);
+    expect(res.score).toBe(0);
+    expect(res.reason).toMatch(/at least 12 characters/i);
+  });
+
+  it('returns { valid: false, score: <3, reason: ... } for weak 12+ character passphrases', () => {
+    const res = validatePassphrase('password123456');
+    expect(res.valid).toBe(false);
+    expect(res.score).toBeLessThan(3);
+    expect(typeof res.reason).toBe('string');
+    expect(res.reason.length).toBeGreaterThan(0);
+  });
+
+  it('returns { valid: true, score: >=3, reason: null } for strong passphrases', () => {
+    const res = validatePassphrase('Tr0ub4dor&3-Horse-Battery-Staple!');
+    expect(res.valid).toBe(true);
+    expect(res.score).toBeGreaterThanOrEqual(3);
+    expect(res.reason).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  15. keyCache in-memory DEK storage
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('keyCache in-memory DEK storage', () => {
+  it('stores, retrieves, and deletes DEKs by documentId', async () => {
+    const mockKey = { type: 'secret', extractable: false };
+    const docId = 'test-doc-id-12345';
+
+    setDEK(docId, mockKey);
+    expect(getDEK(docId)).toBe(mockKey);
+
+    deleteDEK(docId);
+    expect(getDEK(docId)).toBeNull();
+  });
+
+  it('clears all cached keys upon clearKeyCache', () => {
+    setDEK('doc-1', { id: 1 });
+    setDEK('doc-2', { id: 2 });
+    expect(getDEK('doc-1')).toBeDefined();
+    expect(getDEK('doc-2')).toBeDefined();
+
+    clearKeyCache();
+    expect(getDEK('doc-1')).toBeNull();
+    expect(getDEK('doc-2')).toBeNull();
+  });
+});
+
 

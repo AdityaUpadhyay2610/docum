@@ -7,6 +7,9 @@ import {
   generateAndWrapDEK,
   unwrapDEK,
   FIELDS,
+  setDEK,
+  getDEK,
+  deleteDEK,
 } from './crypto/index';
 
 /**
@@ -42,10 +45,14 @@ export const documentServices = {
           return doc;
         }
         try {
-          const dek = await unwrapDEK(masterKey, doc.encDek.wrappedDek, doc.encDek.dekIv);
+          let dek = getDEK(doc._id);
+          if (!dek) {
+            dek = await unwrapDEK(masterKey, doc.encDek.wrappedDek, doc.encDek.dekIv);
+            setDEK(doc._id, dek);
+          }
           const title = await decryptField(dek, doc._id, FIELDS.TITLE, doc.encTitle);
           const icon = doc.encIcon ? await decryptField(dek, doc._id, FIELDS.ICON, doc.encIcon) : (doc.icon || '📝');
-          return { ...doc, title, icon, _dek: dek };
+          return { ...doc, title, icon };
         } catch {
           return { ...doc, title: '[Encrypted]', icon: '🔒', isLocked: true };
         }
@@ -72,7 +79,11 @@ export const documentServices = {
     }
 
     try {
-      const dek = await unwrapDEK(masterKey, doc.encDek.wrappedDek, doc.encDek.dekIv);
+      let dek = getDEK(doc._id);
+      if (!dek) {
+        dek = await unwrapDEK(masterKey, doc.encDek.wrappedDek, doc.encDek.dekIv);
+        setDEK(doc._id, dek);
+      }
       const decrypted = await decryptDocument(dek, doc._id, {
         encTitle: doc.encTitle,
         encIcon: doc.encIcon,
@@ -84,7 +95,6 @@ export const documentServices = {
         title: decrypted.title,
         icon: decrypted.icon,
         content: decrypted.content,
-        _dek: dek,
       };
     } catch (err) {
       console.error('Failed to decrypt document:', err.message);
@@ -109,6 +119,7 @@ export const documentServices = {
     if (masterKey) {
       // 1. Generate new DEK and wrap it with Master Key
       const { dek, wrappedDek, dekIv } = await generateAndWrapDEK(masterKey);
+      setDEK(docId, dek);
 
       // 2. Encrypt sensitive fields with per-field IVs and AAD bound to docId
       const encFields = await encryptDocument(dek, docId, { title, icon, content });
@@ -124,13 +135,12 @@ export const documentServices = {
       };
 
       const res = await api.post('/documents', payload);
-      // Return with in-memory decrypted fields attached for UI
+      // Return with in-memory decrypted fields attached for UI (DEK stored in keyCache)
       return {
         ...res,
         title,
         icon,
         content,
-        _dek: dek,
       };
     }
 
@@ -158,7 +168,7 @@ export const documentServices = {
 
     if (isEncrypted && masterKey) {
       // Get or unwrap DEK
-      let dek = updates._dek;
+      let dek = getDEK(id) || updates._dek;
       if (!dek && updates.encDek) {
         dek = await unwrapDEK(masterKey, updates.encDek.wrappedDek, updates.encDek.dekIv);
       }
@@ -166,6 +176,7 @@ export const documentServices = {
       if (!dek) {
         throw new Error('Cannot update encrypted document without valid decryption key');
       }
+      setDEK(id, dek);
 
       const encFields = await encryptDocument(dek, id, {
         title: updates.title ?? 'Untitled',
@@ -197,7 +208,6 @@ export const documentServices = {
         title: updates.title,
         icon: updates.icon,
         content: updates.content,
-        _dek: dek,
       };
     }
 
@@ -219,6 +229,7 @@ export const documentServices = {
    */
   async delete(id) {
     if (!id) throw new Error('Document ID is required');
+    deleteDEK(id);
     return api.delete(`/documents/${id}`);
   },
 };

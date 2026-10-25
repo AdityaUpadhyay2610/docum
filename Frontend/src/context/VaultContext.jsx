@@ -24,9 +24,11 @@ import {
   unlockVault as cryptoUnlockVault,
   changePassphrase as cryptoChangePassphrase,
   recoverWithKey as cryptoRecoverWithKey,
+  resetPassphraseWithRecovery as cryptoResetPassphraseWithRecovery,
   generateRecoveryKey,
   validatePassphrase,
   scorePassphrase,
+  clearKeyCache,
 } from '../services/crypto/index.js';
 import { useAuth } from './AuthContext.jsx';
 
@@ -51,17 +53,21 @@ export function VaultProvider({ children }) {
   const [lastRecoveryKey, setLastRecoveryKey] = useState(null);
 
   const inactivityTimerRef = useRef(null);
+  const pendingVaultSetupRef = useRef(null);
 
   const isUnlocked = Boolean(masterKey);
 
   // ── Lock Vault ─────────────────────────────────────────────────────────────
   const lockVault = useCallback(() => {
     setMasterKey(null);
+    clearKeyCache();
+    pendingVaultSetupRef.current = null;
     if (inactivityTimerRef.current) {
       clearTimeout(inactivityTimerRef.current);
       inactivityTimerRef.current = null;
     }
-    // Notify application that vault is locked so decrypted state is purged
+    // Notify application and keyCache that vault is locked
+    window.dispatchEvent(new CustomEvent('vault:lock'));
     window.dispatchEvent(new CustomEvent('vault:locked'));
   }, []);
 
@@ -173,8 +179,8 @@ export function VaultProvider({ children }) {
     };
   }, [lockVault]);
 
-  // ── Setup Vault ────────────────────────────────────────────────────────────
-  const setupVault = useCallback(async (passphrase) => {
+  // ── Setup Vault Order: Step 1 (Derive & Prepare in memory) ─────────────────
+  const prepareVaultSetup = useCallback(async (passphrase) => {
     const validation = validatePassphrase(passphrase);
     if (!validation.valid) {
       throw new Error(validation.reason);
@@ -186,7 +192,25 @@ export function VaultProvider({ children }) {
     // Browser Web Crypto setup (derives KEK, wraps Master Key, zeroes buffers)
     const cryptoResult = await cryptoSetupVault(passphrase, recoveryBytes);
 
-    // Save metadata on server
+    pendingVaultSetupRef.current = {
+      cryptoResult,
+      recoveryString,
+      recoveryBytes,
+    };
+
+    return { recoveryKey: recoveryString };
+  }, []);
+
+  // ── Setup Vault Order: Step 2 (POST after confirmation) ────────────────────
+  const confirmVaultSetup = useCallback(async () => {
+    const pending = pendingVaultSetupRef.current;
+    if (!pending) {
+      throw new Error('No pending vault setup to confirm');
+    }
+
+    const { cryptoResult, recoveryString } = pending;
+
+    // Save metadata on server only AFTER recovery key confirmed
     await vaultServices.setupVault({
       salt:                 cryptoResult.salt,
       kdfParams:            cryptoResult.kdfParams,
@@ -209,10 +233,22 @@ export function VaultProvider({ children }) {
       recoveryWrappedKeyIv: cryptoResult.recoveryWrappedKeyIv,
     });
     setLastRecoveryKey(recoveryString);
+    pendingVaultSetupRef.current = null;
     setIsSetupModalOpen(false);
 
     return { recoveryKey: recoveryString };
   }, []);
+
+  // ── Abort Vault Setup (Wipe pending keys on cancel) ─────────────────────────
+  const abortVaultSetup = useCallback(() => {
+    pendingVaultSetupRef.current = null;
+  }, []);
+
+  // Combined convenience helper (used by tests and scripts)
+  const setupVault = useCallback(async (passphrase) => {
+    await prepareVaultSetup(passphrase);
+    return confirmVaultSetup();
+  }, [prepareVaultSetup, confirmVaultSetup]);
 
   // ── Unlock Vault with Passphrase ───────────────────────────────────────────
   const unlockVault = useCallback(async (passphrase) => {
@@ -246,6 +282,50 @@ export function VaultProvider({ children }) {
     return true;
   }, [vaultMeta, checkVaultStatus]);
 
+  // ── Reset Passphrase with Recovery Key ──────────────────────────────────────
+  const resetPassphraseWithRecovery = useCallback(async (recoveryString, newPassphrase) => {
+    const validation = validatePassphrase(newPassphrase);
+    if (!validation.valid) {
+      throw new Error(validation.reason);
+    }
+
+    let currentMeta = vaultMeta;
+    if (!currentMeta?.recoveryWrappedKey) {
+      currentMeta = await checkVaultStatus();
+    }
+    if (!currentMeta || !currentMeta.isVaultEnabled) {
+      throw new Error('Vault is not configured on this account');
+    }
+
+    const result = await cryptoResetPassphraseWithRecovery(recoveryString, newPassphrase, currentMeta);
+
+    // Persist new wrapped keys to server
+    await vaultServices.updateVaultMeta({
+      salt:                 result.salt,
+      kdfParams:            result.kdfParams,
+      wrappedMasterKey:     result.wrappedMasterKey,
+      wrappedMasterKeyIv:   result.wrappedMasterKeyIv,
+      recoveryWrappedKey:   result.recoveryWrappedKey,
+      recoveryWrappedKeyIv: result.recoveryWrappedKeyIv,
+    });
+
+    setMasterKey(result.masterKey);
+    setVaultMeta({
+      isVaultEnabled:       true,
+      salt:                 result.salt,
+      kdfParams:            result.kdfParams,
+      wrappedMasterKey:     result.wrappedMasterKey,
+      wrappedMasterKeyIv:   result.wrappedMasterKeyIv,
+      recoveryWrappedKey:   result.recoveryWrappedKey,
+      recoveryWrappedKeyIv: result.recoveryWrappedKeyIv,
+      hasBackup:            true,
+    });
+    setLastRecoveryKey(result.newRecoveryKey);
+    setIsUnlockModalOpen(false);
+
+    return { recoveryKey: result.newRecoveryKey };
+  }, [vaultMeta, checkVaultStatus]);
+
   // ── Change Vault Passphrase ────────────────────────────────────────────────
   const changePassphrase = useCallback(async (currentPassphrase, newPassphrase, loginPassword) => {
     const validation = validatePassphrase(newPassphrase);
@@ -268,8 +348,8 @@ export function VaultProvider({ children }) {
     const cryptoResult = await cryptoChangePassphrase(
       currentPassphrase,
       newPassphrase,
-      currentMeta,
-      newRecoveryBytes
+      newRecoveryBytes,
+      currentMeta
     );
 
     // Persist new wrapped keys with password re-authentication on server
@@ -306,9 +386,13 @@ export function VaultProvider({ children }) {
     isUnlocked,
     isCheckingVault,
     vaultMeta,
+    prepareVaultSetup,
+    confirmVaultSetup,
+    abortVaultSetup,
     setupVault,
     unlockVault,
     unlockWithRecovery,
+    resetPassphraseWithRecovery,
     changePassphrase,
     lockVault,
     checkVaultStatus,

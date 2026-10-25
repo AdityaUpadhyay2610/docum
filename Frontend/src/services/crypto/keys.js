@@ -196,12 +196,24 @@ export async function exportKeyRaw(key) {
 
 // ── Base64 helpers ────────────────────────────────────────────────────────────
 
-/** Uint8Array → base64 string */
+/** Uint8Array → base64 string with chunked conversion to prevent call stack overflow */
 export function toBase64(bytes) {
-  return btoa(String.fromCharCode(...bytes));
+  const CHUNK_SIZE = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+    const chunk = bytes.subarray(i, i + CHUNK_SIZE);
+    binary += String.fromCharCode.apply(null, chunk);
+  }
+  return btoa(binary);
 }
 
 /** base64 string → Uint8Array */
 export function fromBase64(b64) {
-  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const binary = atob(b64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
