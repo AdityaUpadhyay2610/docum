@@ -22,12 +22,17 @@ import documentRoutes from './routes/document.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import vaultRoutes from './routes/vault.routes.js';
 import { originGuard } from './middleware/originGuard.middleware.js';
-import { authRateLimiter, apiRateLimiter } from './middleware/rateLimiter.middleware.js';
+import { apiRateLimiter } from './middleware/rateLimiter.middleware.js';
 
 import { isOriginAllowed } from './config/allowedOrigins.js';
 import mongoSanitize from './middleware/mongoSanitize.middleware.js';
 
 const app = express();
+
+// ── Trust proxy – required when running behind Render / load-balancer ──────────
+// Without this, req.ip returns the proxy address instead of the real client IP,
+// breaking rate limiting, CSRF checks, and audit logging.
+app.set('trust proxy', 1);
 
 // ── 1. Helmet – secure response headers ────────────────────────────────────────
 app.use(
@@ -91,8 +96,15 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ── 7. Auth routes (tight rate limit: 10 req / 15 min) ────────────────────────
-app.use('/api/auth', authRateLimiter, authRoutes);
+// ── 7. Auth routes – split rate limits ────────────────────────────────────────
+// Strict routes (login / register / google / verify-email / resend-verification):
+//   10 req / 15 min – guarded additionally by the token-bucket middleware
+// Generous routes (refresh / logout / me):
+//   60 req / 15 min – called automatically by the app; tight limits cause false logouts
+// NOTE: the per-route rate limiters are applied inside auth.routes.js for granularity.
+// Here we apply strictAuthRateLimiter as the outer fence for the whole /api/auth prefix
+// (so unknown sub-paths also get some protection) and rely on routes to override where needed.
+app.use('/api/auth', authRoutes);
 
 // ── 8. Document routes (general rate limit: 200 req / 15 min) ─────────────────
 app.use('/api/documents', apiRateLimiter, documentRoutes);

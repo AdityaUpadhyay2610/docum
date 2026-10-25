@@ -1,11 +1,10 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
-import mongoose from 'mongoose';
 
 // Configure test environment variables before importing app
 process.env.NODE_ENV = 'development';
-process.env.MONGO_URI = 'mongodb://127.0.0.1:27017/document_workshop_test_idor';
+process.env.MONGO_URI = 'mongodb://127.0.0.1:27017/placeholder';
 process.env.JWT_ACCESS_SECRET = 'test_access_secret_0123456789abcdef0123456789abcdef';
 process.env.JWT_REFRESH_SECRET = 'test_refresh_secret_0123456789abcdef0123456789abcdef';
 process.env.CLIENT_URL = 'http://localhost:5173';
@@ -13,13 +12,14 @@ process.env.CLIENT_URL = 'http://localhost:5173';
 const { default: app } = await import('../src/app.js');
 const { default: User } = await import('../src/models/user.models.js');
 const { default: Document } = await import('../src/models/document.models.js');
+import { setupTestDB, teardownTestDB } from './setup.js';
 
 let tokenUserA = '';
 let tokenUserB = '';
 let docAId = '';
 
 before(async () => {
-  await mongoose.connect(process.env.MONGO_URI);
+  await setupTestDB();
   await User.deleteMany({});
   await Document.deleteMany({});
 
@@ -65,9 +65,7 @@ before(async () => {
 });
 
 after(async () => {
-  await User.deleteMany({});
-  await Document.deleteMany({});
-  await mongoose.disconnect();
+  await teardownTestDB();
 });
 
 test('IDOR Protection: User B CANNOT read User A document', async () => {

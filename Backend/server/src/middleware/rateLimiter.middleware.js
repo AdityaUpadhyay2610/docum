@@ -1,8 +1,16 @@
 /**
  * Rate Limiting Middleware
  *
- * Applies tiered rate limits to prevent brute-force attacks and API abuse.
- * Tight limits on auth endpoints; moderate limits on all other API routes.
+ * Tiered rate limits:
+ *
+ *  strictAuthRateLimiter  – login, register, google, verify-email, resend-verification
+ *    10 requests / 15 minutes per IP (brute-force protection)
+ *
+ *  generousAuthRateLimiter – refresh, logout, me
+ *    60 requests / 15 minutes per IP (called automatically by the app)
+ *
+ *  apiRateLimiter – documents, vault
+ *    200 requests / 15 minutes per IP (general DoS protection)
  */
 
 import rateLimit from 'express-rate-limit';
@@ -15,9 +23,9 @@ const rateLimitHandler = (req, res, _next, options) => {
   });
 };
 
-// ─── Auth endpoints (login / register / refresh) ──────────────────────────────
+// ─── Strict Auth endpoints (login / register / google / verify / resend) ───────
 // 10 attempts per 15 minutes per IP – prevents brute-force / credential stuffing
-export const authRateLimiter = rateLimit({
+export const strictAuthRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10,
   standardHeaders: true,   // Return `RateLimit-*` headers
@@ -25,6 +33,18 @@ export const authRateLimiter = rateLimit({
   message: 'Too many authentication attempts. Please try again in 15 minutes.',
   handler: rateLimitHandler,
   skipSuccessfulRequests: false,
+});
+
+// ─── Generous Auth endpoints (refresh / logout / me) ────────────────────────
+// Called automatically by the app; tight limits would cause false logouts.
+// 60 requests per 15 minutes per IP is still a meaningful guard against abuse.
+export const generousAuthRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many session requests. Please try again later.',
+  handler: rateLimitHandler,
 });
 
 // ─── General API endpoints ────────────────────────────────────────────────────
@@ -37,3 +57,6 @@ export const apiRateLimiter = rateLimit({
   message: 'Too many requests from this IP. Please try again later.',
   handler: rateLimitHandler,
 });
+
+// Backwards-compatible alias so existing imports of `authRateLimiter` keep working
+export const authRateLimiter = strictAuthRateLimiter;

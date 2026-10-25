@@ -1,5 +1,36 @@
 import bcrypt from 'bcryptjs';
 import User from '../models/user.models.js';
+import { verifyGoogleToken } from './auth.controller.js';
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+/** Maximum number of previous key backups to retain per user. */
+const MAX_PREVIOUS_KEYS = 3;
+
+/** Previous key entries older than this are dropped (30 days in ms). */
+const PREVIOUS_KEYS_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Maximum age of a Google ID token used as re-auth for vault meta updates.
+ * The token's `iat` claim must be within this window of the current time.
+ */
+const GOOGLE_REAUTH_MAX_AGE_S = 5 * 60; // 5 minutes
+
+// ── Helper: prune previousKeys ────────────────────────────────────────────────
+
+/**
+ * Trim the previousKeys array to the last MAX_PREVIOUS_KEYS entries,
+ * discarding any entries older than PREVIOUS_KEYS_MAX_AGE_MS.
+ *
+ * @param {object[]} previousKeys
+ * @returns {object[]}
+ */
+function prunePreviousKeys(previousKeys) {
+  const cutoff = new Date(Date.now() - PREVIOUS_KEYS_MAX_AGE_MS);
+  return previousKeys
+    .filter((k) => !k.replacedAt || new Date(k.replacedAt) >= cutoff)
+    .slice(-MAX_PREVIOUS_KEYS); // keep only the last N
+}
 
 /**
  * POST /api/vault/setup
@@ -98,9 +129,11 @@ export const getVaultMeta = async (req, res) => {
  * Updates vault metadata (e.g. passphrase rotation or recovery key reset).
  *
  * Security Requirements:
- * 1. Requires login password re-authentication.
- * 2. Backs up previous wrapped keys to previousKeys array.
- * 3. Invariant: isVaultEnabled cannot be set back to false.
+ * 1. Requires login password re-authentication (for local accounts).
+ * 2. For Google-only accounts (no password): requires a fresh Google ID token
+ *    (issued within the last 5 minutes, same googleId) as re-authentication.
+ * 3. Backs up previous wrapped keys to previousKeys array (capped at last 3, max 30 days old).
+ * 4. Invariant: isVaultEnabled cannot be set back to false.
  */
 export const updateVaultMeta = async (req, res) => {
   try {
@@ -111,6 +144,7 @@ export const updateVaultMeta = async (req, res) => {
 
     const {
       password,
+      googleIdToken, // for Google-only accounts
       salt,
       kdfParams,
       wrappedMasterKey,
@@ -130,8 +164,10 @@ export const updateVaultMeta = async (req, res) => {
       });
     }
 
-    // Require password re-authentication if account has a password
+    // ── Re-authentication ────────────────────────────────────────────────────
+
     if (user.password) {
+      // Local account: require login password
       if (!password) {
         return res.status(400).json({
           error: 'Login password is required to update vault metadata',
@@ -143,9 +179,43 @@ export const updateVaultMeta = async (req, res) => {
           error: 'Invalid login password for vault re-authentication',
         });
       }
+    } else {
+      // Google-only account (no password): require a fresh Google ID token
+      if (!googleIdToken) {
+        return res.status(400).json({
+          error: 'A fresh Google ID token is required to update vault metadata for Google-only accounts',
+          code: 'GOOGLE_REAUTH_REQUIRED',
+        });
+      }
+
+      let googlePayload;
+      try {
+        googlePayload = await verifyGoogleToken(googleIdToken);
+      } catch {
+        return res.status(401).json({
+          error: 'Invalid or expired Google ID token for vault re-authentication',
+        });
+      }
+
+      // Verify the token was issued recently (within last 5 minutes)
+      const tokenAge = Math.floor(Date.now() / 1000) - (googlePayload.iat || 0);
+      if (tokenAge > GOOGLE_REAUTH_MAX_AGE_S) {
+        return res.status(401).json({
+          error: 'Google ID token is too old for vault re-authentication. Please sign in again.',
+          code: 'GOOGLE_TOKEN_TOO_OLD',
+        });
+      }
+
+      // Verify it belongs to the same Google account
+      if (googlePayload.sub !== user.googleId) {
+        return res.status(401).json({
+          error: 'Google account mismatch for vault re-authentication',
+        });
+      }
     }
 
-    // Backup current wrapped keys before updating
+    // ── Backup current keys (cap to last 3, drop entries >30 days old) ───────
+
     if (!user.vault.previousKeys) {
       user.vault.previousKeys = [];
     }
@@ -159,7 +229,11 @@ export const updateVaultMeta = async (req, res) => {
       replacedAt: new Date(),
     });
 
-    // Update vault keys
+    // Prune: keep last 3, drop entries older than 30 days
+    user.vault.previousKeys = prunePreviousKeys(user.vault.previousKeys);
+
+    // ── Update vault keys ─────────────────────────────────────────────────────
+
     user.vault.salt = salt;
     user.vault.kdfParams = kdfParams;
     user.vault.wrappedMasterKey = wrappedMasterKey;
@@ -173,7 +247,7 @@ export const updateVaultMeta = async (req, res) => {
 
     return res.status(200).json({
       message: 'Vault metadata updated successfully',
-      hasBackup: true,
+      hasBackup: user.vault.previousKeys.length > 0,
     });
   } catch (error) {
     console.error('Error in updateVaultMeta:', error.message);

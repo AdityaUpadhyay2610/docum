@@ -40,12 +40,17 @@ const generateAccessToken = (user) => {
   );
 };
 
-// Helper to generate refresh token
-const generateRefreshToken = (user) => {
+/**
+ * Generate a refresh token.
+ * Step 1d: include the session family UUID so that on an unknown-hash event
+ * we can identify and revoke only that specific session family rather than all sessions.
+ */
+const generateRefreshToken = (user, family) => {
   return jwt.sign(
     {
       userId: user._id,
       jti: crypto.randomUUID(),
+      fam: family, // session family id – used for targeted revocation
     },
     config.jwtRefreshSecret,
     { expiresIn: config.jwtRefreshExpiresIn }
@@ -125,8 +130,8 @@ export const register = async (req, res) => {
     });
 
     const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user);
     const family = crypto.randomUUID();
+    const refreshToken = generateRefreshToken(user, family);
 
     User.addSession(user, {
       hash: hashToken(refreshToken),
@@ -201,10 +206,66 @@ export const verifyEmail = async (req, res) => {
   }
 };
 
-// POST /api/auth/google
+/**
+ * POST /api/auth/resend-verification (Step 1f)
+ * Authenticated route. Generates a new verification token and sends it.
+ * Rate-limited strictly (handled via strictAuthRateLimiter in routes).
+ */
+export const resendVerification = async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (user.isEmailVerified) {
+      return res.status(400).json({ error: 'Email is already verified' });
+    }
+
+    // Issue new token (rotates the old one)
+    const rawVerificationToken = crypto.randomBytes(32).toString('hex');
+    const hashedVerificationToken = hashToken(rawVerificationToken);
+
+    user.emailVerificationToken = hashedVerificationToken;
+    user.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await user.save();
+
+    // Send email – token goes only into the email, NOT the response body
+    sendVerificationEmail({
+      to: user.email,
+      name: user.name,
+      rawToken: rawVerificationToken,
+    }).catch((err) => {
+      console.error('[ResendVerification] Failed to send email:', err.message);
+    });
+
+    return res.status(200).json({
+      message: 'Verification email resent. Please check your inbox.',
+      // verificationToken intentionally omitted
+    });
+  } catch (error) {
+    console.error('Resend verification error:', error.message);
+    return res.status(500).json({ error: 'Failed to resend verification email' });
+  }
+};
+
+/**
+ * POST /api/auth/google
+ *
+ * Step 1e: When a Google login matches an existing LOCAL account:
+ *   - Require the account's current password in the same request.
+ *   - Return code PASSWORD_REQUIRED_TO_LINK if password is missing.
+ *   - Require isEmailVerified.
+ *   - Revoke all other sessions on successful link.
+ */
 export const googleAuth = async (req, res) => {
   try {
-    const { credential } = req.body;
+    const { credential, password } = req.body;
 
     if (!credential) {
       return res.status(400).json({ error: 'Google authentication credential is required' });
@@ -229,7 +290,7 @@ export const googleAuth = async (req, res) => {
     if (user) {
       // If user exists by email but googleId is not yet linked:
       if (!user.googleId) {
-        // Enforce: email must be verified before account linking
+        // Step 1e: Enforce email verification before linking
         if (!user.isEmailVerified) {
           return res.status(403).json({
             error: 'Cannot link Google account: Please verify your account email address first.',
@@ -237,13 +298,41 @@ export const googleAuth = async (req, res) => {
           });
         }
 
+        // Step 1e: Require current password to prove account ownership before linking
+        if (!password) {
+          return res.status(400).json({
+            error: 'Your password is required to link your Google account to this existing account.',
+            code: 'PASSWORD_REQUIRED_TO_LINK',
+          });
+        }
+
+        // Google-only accounts have no password, but this branch is for local accounts
+        if (!user.password) {
+          return res.status(400).json({
+            error: 'Cannot link: account has no password. Please contact support.',
+            code: 'NO_PASSWORD_ON_ACCOUNT',
+          });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+          if (req._tokenBucket) penaliseFailedLogin(req._tokenBucket.ip, user.email);
+          return res.status(401).json({
+            error: 'Incorrect password. Please enter your current account password to link Google.',
+            code: 'INVALID_PASSWORD_FOR_LINK',
+          });
+        }
+
+        // Link the Google account and revoke all other sessions
         user.googleId = googleSub;
         if (!user.avatar && googlePicture) {
           user.avatar = googlePicture;
         }
+        // Revoke all existing sessions (security hygiene on account link)
+        user.sessions = [];
       }
     } else {
-      // New user registering with Google (password is optional / omitted)
+      // New user registering with Google (no local account found)
       user = new User({
         name: googleName,
         email: googleEmail,
@@ -256,8 +345,8 @@ export const googleAuth = async (req, res) => {
     }
 
     const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user);
     const family = crypto.randomUUID();
+    const refreshToken = generateRefreshToken(user, family);
 
     User.addSession(user, {
       hash: hashToken(refreshToken),
@@ -318,8 +407,8 @@ export const login = async (req, res) => {
     if (req._tokenBucket) clearLoginBuckets(req._tokenBucket.ip, normalizedEmail);
 
     const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user);
     const family = crypto.randomUUID();
+    const refreshToken = generateRefreshToken(user, family);
 
     User.addSession(user, {
       hash: hashToken(refreshToken),
@@ -347,7 +436,17 @@ export const login = async (req, res) => {
   }
 };
 
-// POST /api/auth/refresh
+/**
+ * POST /api/auth/refresh
+ *
+ * Step 1d: Family-based targeted revocation.
+ *  - The refresh JWT now contains `fam` (family UUID).
+ *  - On an unknown hash: check if ANY session has the same family.
+ *    • If family session found → that family was compromised → revoke ONLY that family.
+ *    • If no family session found → session was already logged out / evicted → 401 only,
+ *      do NOT revoke other sessions (prevents DoS via stolen-but-old tokens).
+ *  - Keep the 10s grace window for concurrent tab refreshes.
+ */
 export const refreshAccessToken = async (req, res) => {
   try {
     const refreshToken = req.cookies?.refreshToken;
@@ -375,31 +474,44 @@ export const refreshAccessToken = async (req, res) => {
     const { session, isGrace } = User.findSession(user, incomingHash);
 
     if (!session) {
-      // Hash matches NO known session and NO grace window → possible replay attack.
-      // Check whether any session shares a family with the decoded jti's family.
-      // We don't have the family in the JWT, so we revoke all sessions as a safety measure.
-      console.warn(`[Auth] Token reuse / unknown hash detected for user ${decoded.userId}. Revoking all sessions.`);
-      user.sessions = [];
-      await user.save();
+      // Unknown hash – check if this token's family still exists in sessions
+      const tokenFamily = decoded.fam; // present in tokens issued since Step 1d
+      const familySession = tokenFamily
+        ? user.sessions.find((s) => s.family === tokenFamily)
+        : null;
+
+      if (familySession) {
+        // Family exists but hash is unknown → possible token replay attack.
+        // Revoke ONLY this session family (targeted revocation).
+        console.warn(`[Auth] Token reuse detected in family ${tokenFamily} for user ${decoded.userId}. Revoking family.`);
+        user.sessions = user.sessions.filter((s) => s.family !== tokenFamily);
+        await user.save();
+        res.clearCookie('refreshToken', COOKIE_OPTIONS);
+        return res.status(401).json({
+          error: 'Security alert: Token reuse detected. This device session has been revoked.',
+          code: 'TOKEN_REUSE_DETECTED',
+        });
+      }
+
+      // Family doesn't exist (already logged out or evicted) → just 401, no revocation.
+      // This prevents a DoS where an old stolen token could wipe other active sessions.
       res.clearCookie('refreshToken', COOKIE_OPTIONS);
       return res.status(401).json({
-        error: 'Security alert: Token reuse detected. All sessions revoked.',
-        code: 'TOKEN_REUSE_DETECTED',
+        error: 'Session not found. Please log in again.',
+        code: 'SESSION_REVOKED',
       });
     }
 
     if (isGrace) {
       // The token was already rotated but we're within the grace window.
-      // Respond with the SAME new access token without rotating again.
-      // (The session already has the latest hash stored from the first rotation.)
+      // Respond with a new access token without rotating again.
       const newAccessToken = generateAccessToken(user);
-      // Do NOT rotate the refresh cookie – the new cookie was already set in the winning request.
       return res.status(200).json({ accessToken: newAccessToken });
     }
 
     // Normal rotation: generate new tokens, set grace window on current session
     const newAccessToken = generateAccessToken(user);
-    const newRefreshToken = generateRefreshToken(user);
+    const newRefreshToken = generateRefreshToken(user, session.family); // same family
     const newHash = hashToken(newRefreshToken);
 
     session.prevHash   = session.hash;
@@ -456,6 +568,7 @@ export const getMe = async (req, res) => {
         avatar: user.avatar,
         isEmailVerified: user.isEmailVerified,
         createdAt: user.createdAt,
+        isVaultEnabled: user.vault?.isVaultEnabled || false,
       },
     });
   } catch (error) {

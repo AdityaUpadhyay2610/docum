@@ -6,7 +6,7 @@ import {
 } from '../controllers/vault.controller.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { validateRequest } from '../middleware/validate.middleware.js';
-import { authRateLimiter } from '../middleware/rateLimiter.middleware.js';
+import { strictAuthRateLimiter } from '../middleware/rateLimiter.middleware.js';
 import {
   validateVaultSetup,
   validateVaultUpdate,
@@ -19,6 +19,6 @@ router.use(authMiddleware);
 
 router.post('/setup', validateVaultSetup, validateRequest, setupVault);
 router.get('/meta', getVaultMeta);
-router.put('/meta', authRateLimiter, validateVaultUpdate, validateRequest, updateVaultMeta);
+router.put('/meta', strictAuthRateLimiter, validateVaultUpdate, validateRequest, updateVaultMeta);
 
 export default router;

@@ -111,6 +111,16 @@ export const createDocument = async (req, res) => {
     }
 
     const isEncrypted = req.body.isEncrypted === true;
+
+    // Step 1b: If writing an encrypted document, reject any plaintext title/icon/content
+    if (isEncrypted) {
+      const hasPlaintext = req.body.title !== undefined || req.body.icon !== undefined || req.body.content !== undefined;
+      if (hasPlaintext) {
+        return res.status(400).json({
+          error: 'Encrypted documents must not include plaintext title, icon, or content fields',
+        });
+      }
+    }
     const payload = isEncrypted
       ? {
           _id: req.body._id,
@@ -238,11 +248,33 @@ export const updateDocument = async (req, res) => {
       return res.status(400).json({ error: 'Invalid document data', fields: validationErrors });
     }
 
-    if (updates.title !== undefined && !updates.isEncrypted) {
-      updates.title = updates.title.trim();
-      if (updates.title.length === 0) {
-        return res.status(400).json({ error: 'Title cannot be empty' });
+    const isEncrypted = req.body.isEncrypted === true;
+
+    // Step 1b: Reject plaintext fields in encrypted writes
+    if (isEncrypted) {
+      const hasPlaintext = updates.title !== undefined || updates.icon !== undefined || updates.content !== undefined;
+      if (hasPlaintext) {
+        return res.status(400).json({
+          error: 'Encrypted documents must not include plaintext title, icon, or content fields',
+        });
       }
+    }
+
+    // Step 1b: For encrypted documents, If-Match is MANDATORY (prevents blind overwrites)
+    if (isEncrypted) {
+      const ifMatch = req.headers['if-match'];
+      if (!ifMatch && updates.revision === undefined) {
+        return res.status(428).json({
+          error: 'Precondition Required: If-Match header is required for encrypted document updates',
+        });
+      }
+    }
+    // Step 1b: Force plaintext sentinel values on encrypted writes
+    // This ensures migrated documents never accidentally keep real plaintext metadata.
+    if (isEncrypted) {
+      updates.title   = '[Encrypted]';
+      updates.icon    = '🔒';
+      updates.content = [];
     }
 
     // Parse expected revision from If-Match header or body.revision

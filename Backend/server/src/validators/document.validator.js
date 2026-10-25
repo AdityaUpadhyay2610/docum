@@ -117,6 +117,15 @@ const content = body('content')
     return true;
   });
 
+const BASE64_RE = /^[A-Za-z0-9+/\-_]+=*$/;
+const MAX_IV_LEN = 64;
+const MAX_VERSION_LEN = 16;
+const MAX_CT_TITLE_LEN = 2048;
+const MAX_CT_ICON_LEN = 512;
+const MAX_CT_CONTENT_LEN = 5242880;
+const MAX_WRAPPED_DEK_LEN = 256;
+const MAX_DEK_IV_LEN = 64;
+
 const encTitle = body('encTitle')
   .optional({ nullable: true })
   .custom((val, { req }) => {
@@ -127,6 +136,11 @@ const encTitle = body('encTitle')
     if (typeof val.v !== 'string' || typeof val.iv !== 'string' || typeof val.ct !== 'string') {
       throw new Error('encTitle must contain { v, iv, ct } strings');
     }
+    if (val.v.length > MAX_VERSION_LEN) throw new Error(`encTitle.v exceeds max length (${MAX_VERSION_LEN})`);
+    if (val.iv.length > MAX_IV_LEN) throw new Error(`encTitle.iv exceeds max length (${MAX_IV_LEN})`);
+    if (val.ct.length > MAX_CT_TITLE_LEN) throw new Error(`encTitle.ct exceeds max length (${MAX_CT_TITLE_LEN})`);
+    if (!BASE64_RE.test(val.iv)) throw new Error('encTitle.iv must be valid base64');
+    if (!BASE64_RE.test(val.ct)) throw new Error('encTitle.ct must be valid base64');
     return true;
   });
 
@@ -140,6 +154,11 @@ const encContent = body('encContent')
     if (typeof val.v !== 'string' || typeof val.iv !== 'string' || typeof val.ct !== 'string') {
       throw new Error('encContent must contain { v, iv, ct } strings');
     }
+    if (val.v.length > MAX_VERSION_LEN) throw new Error(`encContent.v exceeds max length (${MAX_VERSION_LEN})`);
+    if (val.iv.length > MAX_IV_LEN) throw new Error(`encContent.iv exceeds max length (${MAX_IV_LEN})`);
+    if (val.ct.length > MAX_CT_CONTENT_LEN) throw new Error(`encContent.ct exceeds max length (${MAX_CT_CONTENT_LEN})`);
+    if (!BASE64_RE.test(val.iv)) throw new Error('encContent.iv must be valid base64');
+    if (!BASE64_RE.test(val.ct)) throw new Error('encContent.ct must be valid base64');
     return true;
   });
 
@@ -153,6 +172,11 @@ const encIcon = body('encIcon')
     if (typeof val.v !== 'string' || typeof val.iv !== 'string' || typeof val.ct !== 'string') {
       throw new Error('encIcon must contain { v, iv, ct } strings');
     }
+    if (val.v.length > MAX_VERSION_LEN) throw new Error(`encIcon.v exceeds max length (${MAX_VERSION_LEN})`);
+    if (val.iv.length > MAX_IV_LEN) throw new Error(`encIcon.iv exceeds max length (${MAX_IV_LEN})`);
+    if (val.ct.length > MAX_CT_ICON_LEN) throw new Error(`encIcon.ct exceeds max length (${MAX_CT_ICON_LEN})`);
+    if (!BASE64_RE.test(val.iv)) throw new Error('encIcon.iv must be valid base64');
+    if (!BASE64_RE.test(val.ct)) throw new Error('encIcon.ct must be valid base64');
     return true;
   });
 
@@ -166,6 +190,10 @@ const encDek = body('encDek')
     if (typeof val.wrappedDek !== 'string' || typeof val.dekIv !== 'string') {
       throw new Error('encDek must contain { wrappedDek, dekIv } strings');
     }
+    if (val.wrappedDek.length > MAX_WRAPPED_DEK_LEN) throw new Error(`encDek.wrappedDek exceeds max length (${MAX_WRAPPED_DEK_LEN})`);
+    if (val.dekIv.length > MAX_DEK_IV_LEN) throw new Error(`encDek.dekIv exceeds max length (${MAX_DEK_IV_LEN})`);
+    if (!BASE64_RE.test(val.wrappedDek)) throw new Error('encDek.wrappedDek must be valid base64');
+    if (!BASE64_RE.test(val.dekIv)) throw new Error('encDek.dekIv must be valid base64');
     return true;
   });
 

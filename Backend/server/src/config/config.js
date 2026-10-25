@@ -56,9 +56,17 @@ const config = {
   mongoUri: required('MONGO_URI'),
 
   // ── JWT Secrets ──────────────────────────────────────────────────────────────
-  // IMPORTANT: Both must be long, random hex strings. Never use plain words.
-  jwtAccessSecret:  required('JWT_ACCESS_SECRET'),
-  jwtRefreshSecret: required('JWT_REFRESH_SECRET'),
+  // IMPORTANT: Both must be long (≥32 chars), random hex strings – NEVER the same value.
+  jwtAccessSecret: (() => {
+    const s = required('JWT_ACCESS_SECRET');
+    if (s.length < 32) throw new Error('FATAL: JWT_ACCESS_SECRET must be at least 32 characters long.');
+    return s;
+  })(),
+  jwtRefreshSecret: (() => {
+    const s = required('JWT_REFRESH_SECRET');
+    if (s.length < 32) throw new Error('FATAL: JWT_REFRESH_SECRET must be at least 32 characters long.');
+    return s;
+  })(),
 
   // JWT token lifetimes
   jwtAccessExpiresIn:  optional('JWT_ACCESS_EXPIRES_IN',  '10m'),
@@ -84,4 +92,15 @@ const config = {
   googleClientSecret: optional('GOOGLE_CLIENT_SECRET', ''),
 };
 
+// ── Cross-secret check ────────────────────────────────────────────────────────
+// Enforce that the two JWT secrets are distinct at startup.
+// Using the same secret for both allows refresh tokens to be used as access tokens.
+if (config.jwtAccessSecret === config.jwtRefreshSecret) {
+  throw new Error(
+    'FATAL: JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be different values. ' +
+    'Using the same secret for both is a security vulnerability.'
+  );
+}
+
 export default config;
+

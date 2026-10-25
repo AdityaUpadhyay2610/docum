@@ -83,6 +83,14 @@ export async function sendVerificationEmail({ to, name, rawToken }) {
     return; // Degrade gracefully – do not throw; registration still succeeds
   }
 
+  // HTML-escape the display name to prevent any XSS if a malicious name is stored
+  const safeName = name
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+
   // Build the verification link: the raw token goes in the URL, not the response body
   const baseUrl = config.clientUrl
     ? config.clientUrl.split(',')[0].trim() // use first allowed origin
@@ -107,7 +115,7 @@ export async function sendVerificationEmail({ to, name, rawToken }) {
       'If you did not create an account, you can safely ignore this email.',
     ].join('\n'),
     html: `
-      <p>Hi ${name},</p>
+      <p>Hi ${safeName},</p>
       <p>Thanks for registering! Please verify your email address by clicking the button below.</p>
       <p>The link is valid for <strong>24 hours</strong>.</p>
       <p style="margin:24px 0">

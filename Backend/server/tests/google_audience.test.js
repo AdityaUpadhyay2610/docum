@@ -11,11 +11,10 @@
 import { test, before, after, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
-import mongoose from 'mongoose';
 
 // ── Environment must be set BEFORE any module imports ────────────────────────
 process.env.NODE_ENV      = 'development';
-process.env.MONGO_URI     = 'mongodb://127.0.0.1:27017/document_workshop_test_gaud';
+process.env.MONGO_URI     = 'mongodb://127.0.0.1:27017/placeholder';
 process.env.JWT_ACCESS_SECRET  = 'test_access_secret_0123456789abcdef0123456789abcdef';
 process.env.JWT_REFRESH_SECRET = 'test_refresh_secret_0123456789abcdef0123456789abcdef';
 process.env.CLIENT_URL    = 'http://localhost:5173';
@@ -37,14 +36,15 @@ const { default: User } = await import('../src/models/user.models.js');
  */
 import { OAuth2Client } from 'google-auth-library';
 
+import { setupTestDB, teardownTestDB } from './setup.js';
+
 before(async () => {
-  await mongoose.connect(process.env.MONGO_URI);
+  await setupTestDB();
   await User.deleteMany({});
 });
 
 after(async () => {
-  await User.deleteMany({});
-  await mongoose.disconnect();
+  await teardownTestDB();
   mock.restoreAll();
 });
 
