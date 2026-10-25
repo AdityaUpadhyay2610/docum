@@ -41,8 +41,6 @@ document-workshops/
 │   │   │   └── index.js
 │   │   ├── services/
 │   │   │   ├── crypto/                 # End-to-end zero-knowledge cryptography suite
-│   │   │   │   ├── __tests__/
-│   │   │   │   │   └── crypto.test.js  # Vitest unit test suite (35 tests)
 │   │   │   │   ├── encryption.js       # AES-GCM-256 document encrypt/decrypt operations
 │   │   │   │   ├── kdf.js              # Argon2id (WebAssembly) & PBKDF2 key derivation
 │   │   │   │   ├── keyCache.js         # Module-scoped in-memory DEK cache (auto-clears on lock)
@@ -110,12 +108,6 @@ document-workshops/
 │       │   │   └── vault.validator.js    # Vault metadata length & structure validators
 │       │   ├── app.js                  # Express app, Helmet, CORS, trust proxy, rate limiters
 │       │   └── server.js               # HTTP listener entry point
-│       ├── tests/                      # Automated Node.js native test suite (34 tests)
-│       │   ├── setup.js                # In-memory MongoDB (MongoMemoryServer) lifecycle
-│       │   ├── auth_security.test.js   # Auth rate limiting, refresh throttle, token bucket, CSRF
-│       │   ├── google_audience.test.js # Google OAuth audience & verified-email tests
-│       │   ├── idor.test.js            # IDOR isolation & owner CRUD tests
-│       │   └── vault.test.js           # Vault setup, envelope bypass, revisions, conflicts
 │       ├── .env.example                # Backend environment template (71 lines fully documented)
 │       └── package.json
 │
