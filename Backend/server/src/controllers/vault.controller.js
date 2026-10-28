@@ -4,27 +4,11 @@ import { verifyGoogleToken } from './auth.controller.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-/** Maximum number of previous key backups to retain per user. */
-const MAX_PREVIOUS_KEYS = 10;
-
 /**
  * Maximum age of a Google ID token used as re-auth for vault meta updates.
  * The token's `iat` claim must be within this window of the current time.
  */
 const GOOGLE_REAUTH_MAX_AGE_S = 5 * 60; // 5 minutes
-
-// ── Helper: prune previousKeys ────────────────────────────────────────────────
-
-/**
- * Trim the previousKeys array to the last MAX_PREVIOUS_KEYS entries.
- * Capped by count only to ensure historical keys are never dropped by age.
- *
- * @param {object[]} previousKeys
- * @returns {object[]}
- */
-function prunePreviousKeys(previousKeys) {
-  return previousKeys.slice(-MAX_PREVIOUS_KEYS);
-}
 
 /**
  * POST /api/vault/setup
@@ -108,7 +92,6 @@ export const getVaultMeta = async (req, res) => {
       wrappedMasterKeyIv: user.vault.wrappedMasterKeyIv,
       recoveryWrappedKey: user.vault.recoveryWrappedKey,
       recoveryWrappedKeyIv: user.vault.recoveryWrappedKeyIv,
-      hasBackup: (user.vault.previousKeys?.length || 0) > 0,
       setupAt: user.vault.setupAt,
       updatedAt: user.vault.updatedAt,
     });
@@ -208,26 +191,7 @@ export const updateVaultMeta = async (req, res) => {
       }
     }
 
-    // ── Backup current keys (cap to last 3, drop entries >30 days old) ───────
-
-    if (!user.vault.previousKeys) {
-      user.vault.previousKeys = [];
-    }
-    user.vault.previousKeys.push({
-      salt: user.vault.salt,
-      kdfParams: user.vault.kdfParams,
-      wrappedMasterKey: user.vault.wrappedMasterKey,
-      wrappedMasterKeyIv: user.vault.wrappedMasterKeyIv,
-      recoveryWrappedKey: user.vault.recoveryWrappedKey,
-      recoveryWrappedKeyIv: user.vault.recoveryWrappedKeyIv,
-      replacedAt: new Date(),
-    });
-
-    // Prune: keep last 3, drop entries older than 30 days
-    user.vault.previousKeys = prunePreviousKeys(user.vault.previousKeys);
-
-    // ── Update vault keys ─────────────────────────────────────────────────────
-
+    // ── Update vault keys (previousKeys are no longer stored) ────────────────
     user.vault.salt = salt;
     user.vault.kdfParams = kdfParams;
     user.vault.wrappedMasterKey = wrappedMasterKey;
@@ -241,7 +205,6 @@ export const updateVaultMeta = async (req, res) => {
 
     return res.status(200).json({
       message: 'Vault metadata updated successfully',
-      hasBackup: user.vault.previousKeys.length > 0,
     });
   } catch (error) {
     console.error('Error in updateVaultMeta:', error.message);

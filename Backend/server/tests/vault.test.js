@@ -270,38 +270,33 @@ test('Vault meta update: requires valid login password and archives previous key
     });
 
   assert.equal(successRes.status, 200);
-  assert.equal(successRes.body.hasBackup, true);
 
-  // 3. Verify user model in DB has backup and isVaultEnabled remains true
+  // 3. Verify user model in DB has updated keys and previousKeys is NOT stored
   const dbUser = await User.findById(userIdA);
   assert.equal(dbUser.vault.isVaultEnabled, true);
   assert.equal(dbUser.vault.salt, 'c2FsdF9uZXdfNDU2');
-  assert.equal(dbUser.vault.previousKeys.length, 1);
-  assert.equal(dbUser.vault.previousKeys[0].salt, 'c2FsdF90ZXN0XzEyMw==');
+  assert.equal(dbUser.vault.previousKeys.length, 0);
 });
 
-test('Vault meta: previousKeys capped at 10 and historical keys preserved', async () => {
-  // We already have 1 backup from the previous test. Add 3 more to test capping.
-  for (let i = 0; i < 3; i++) {
-    await request(app)
-      .put('/api/vault/meta')
-      .set('Authorization', `Bearer ${tokenUserA}`)
-      .set('Origin', 'http://localhost:5173')
-      .send({
-        password: 'Password123!',
-        salt: `c2FsdF9yb3VuZF8${i}`,
-        kdfParams: { algorithm: 'argon2id', memoryCost: 65536, timeCost: 3 },
-        wrappedMasterKey: `d3JhcHBlZF9ta18${i}`,
-        wrappedMasterKeyIv: `bWtfaXZf${i}`,
-        recoveryWrappedKey: `cmVjb3Zlcnlf${i}`,
-        recoveryWrappedKeyIv: `cmVjb3Zf${i}`,
-      });
-  }
+test('Vault meta: does not retain previousKeys on updates', async () => {
+  await request(app)
+    .put('/api/vault/meta')
+    .set('Authorization', `Bearer ${tokenUserA}`)
+    .set('Origin', 'http://localhost:5173')
+    .send({
+      password: 'Password123!',
+      salt: 'c2FsdF9yb3VuZF85OTk=',
+      kdfParams: { algorithm: 'argon2id', memoryCost: 65536, timeCost: 3 },
+      wrappedMasterKey: 'd3JhcHBlZF9ta185OTk=',
+      wrappedMasterKeyIv: 'bWtfaXZfOTk5',
+      recoveryWrappedKey: 'cmVjb3ZlcnlfOTk5',
+      recoveryWrappedKeyIv: 'cmVjb3ZfOTk5',
+    });
 
   const dbUser = await User.findById(userIdA);
-  // previousKeys should be retained and capped at 10
-  assert.ok(dbUser.vault.previousKeys.length <= 10, `Expected ≤ 10 previous keys, got ${dbUser.vault.previousKeys.length}`);
+  assert.equal(dbUser.vault.previousKeys.length, 0);
 });
+
 
 test('Vault string field max lengths: rejects oversized salt', async () => {
   const longSalt = 'A'.repeat(100); // exceeds 64 char limit
