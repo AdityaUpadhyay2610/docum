@@ -55,6 +55,16 @@ export const validateVaultSetup = [
     .notEmpty().withMessage('recoveryWrappedKeyIv must be a non-empty string')
     .isLength({ max: 64 }).withMessage('recoveryWrappedKeyIv is too long (max 64 chars)')
     .custom(isBase64).withMessage('recoveryWrappedKeyIv must be a valid base64 string'),
+
+  body('password')
+    .optional()
+    .isString().withMessage('Password must be a string')
+    .isLength({ max: 128 }).withMessage('Password too long'),
+
+  body('googleIdToken')
+    .optional()
+    .isString().withMessage('googleIdToken must be a string')
+    .isLength({ max: 2048 }).withMessage('googleIdToken is too long'),
 ];
 
 export const validateVaultUpdate = [

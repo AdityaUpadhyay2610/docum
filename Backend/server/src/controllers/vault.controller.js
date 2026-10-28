@@ -1,19 +1,68 @@
 import bcrypt from 'bcryptjs';
 import User from '../models/user.models.js';
-import { verifyGoogleToken } from './auth.controller.js';
+import { verifyGoogleToken, hashToken } from './auth.controller.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /**
- * Maximum age of a Google ID token used as re-auth for vault meta updates.
+ * Maximum age of a Google ID token used as re-auth for vault operations.
  * The token's `iat` claim must be within this window of the current time.
  */
 const GOOGLE_REAUTH_MAX_AGE_S = 5 * 60; // 5 minutes
 
 /**
+ * Helper to verify user's identity before sensitive vault operations.
+ * Local accounts require login password.
+ * Google accounts require a fresh Google ID token.
+ */
+async function verifyUserIdentity(user, { password, googleIdToken }, action = 'configure vault') {
+  if (user.password) {
+    if (!password) {
+      const err = new Error(`Login password is required to ${action}`);
+      err.status = 400;
+      throw err;
+    }
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      const err = new Error(`Invalid login password for ${action}`);
+      err.status = 401;
+      throw err;
+    }
+  } else {
+    // Google-only account (no password)
+    if (!googleIdToken) {
+      const err = new Error(`A fresh Google ID token is required to ${action} for Google-only accounts`);
+      err.status = 400;
+      err.code = 'GOOGLE_REAUTH_REQUIRED';
+      throw err;
+    }
+    let googlePayload;
+    try {
+      googlePayload = await verifyGoogleToken(googleIdToken);
+    } catch {
+      const err = new Error(`Invalid or expired Google ID token for ${action}`);
+      err.status = 401;
+      throw err;
+    }
+    const tokenAge = Math.floor(Date.now() / 1000) - (googlePayload.iat || 0);
+    if (tokenAge > GOOGLE_REAUTH_MAX_AGE_S) {
+      const err = new Error('Google ID token is too old. Please sign in again.');
+      err.status = 401;
+      err.code = 'GOOGLE_TOKEN_TOO_OLD';
+      throw err;
+    }
+    if (googlePayload.sub !== user.googleId) {
+      const err = new Error(`Google account mismatch for ${action}`);
+      err.status = 401;
+      throw err;
+    }
+  }
+}
+
+/**
  * POST /api/vault/setup
- * First-time vault setup. Saves salt, KDF parameters, wrapped Master Key,
- * and recovery-wrapped key. Server never sees raw passphrase or plaintext keys.
+ * First-time vault setup. Requires account password or fresh Google sign-in.
+ * Saves salt, KDF parameters, wrapped Master Key, and recovery-wrapped key.
  */
 export const setupVault = async (req, res) => {
   try {
@@ -23,6 +72,8 @@ export const setupVault = async (req, res) => {
     }
 
     const {
+      password,
+      googleIdToken,
       salt,
       kdfParams,
       wrappedMasterKey,
@@ -40,6 +91,13 @@ export const setupVault = async (req, res) => {
       return res.status(400).json({
         error: 'Vault is already configured for this account. Use updateVaultMeta to change passphrase.',
       });
+    }
+
+    // Require account password or fresh Google sign-in to create a vault
+    try {
+      await verifyUserIdentity(user, { password, googleIdToken }, 'configure vault');
+    } catch (authErr) {
+      return res.status(authErr.status || 401).json({ error: authErr.message, code: authErr.code });
     }
 
     user.vault = {
@@ -142,54 +200,24 @@ export const updateVaultMeta = async (req, res) => {
     }
 
     // ── Re-authentication ────────────────────────────────────────────────────
-
-    if (user.password) {
-      // Local account: require login password
-      if (!password) {
-        return res.status(400).json({
-          error: 'Login password is required to update vault metadata',
-        });
-      }
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) {
-        return res.status(401).json({
-          error: 'Invalid login password for vault re-authentication',
-        });
-      }
-    } else {
-      // Google-only account (no password): require a fresh Google ID token
-      if (!googleIdToken) {
-        return res.status(400).json({
-          error: 'A fresh Google ID token is required to update vault metadata for Google-only accounts',
-          code: 'GOOGLE_REAUTH_REQUIRED',
-        });
-      }
-
-      let googlePayload;
-      try {
-        googlePayload = await verifyGoogleToken(googleIdToken);
-      } catch {
-        return res.status(401).json({
-          error: 'Invalid or expired Google ID token for vault re-authentication',
-        });
-      }
-
-      // Verify the token was issued recently (within last 5 minutes)
-      const tokenAge = Math.floor(Date.now() / 1000) - (googlePayload.iat || 0);
-      if (tokenAge > GOOGLE_REAUTH_MAX_AGE_S) {
-        return res.status(401).json({
-          error: 'Google ID token is too old for vault re-authentication. Please sign in again.',
-          code: 'GOOGLE_TOKEN_TOO_OLD',
-        });
-      }
-
-      // Verify it belongs to the same Google account
-      if (googlePayload.sub !== user.googleId) {
-        return res.status(401).json({
-          error: 'Google account mismatch for vault re-authentication',
-        });
-      }
+    try {
+      await verifyUserIdentity(user, { password, googleIdToken }, 'update vault metadata');
+    } catch (authErr) {
+      return res.status(authErr.status || 401).json({ error: authErr.message, code: authErr.code });
     }
+
+    // ── Revoke other sessions on vault key change ────────────────────────────
+    const currentRefresh = req.cookies?.refreshToken;
+    if (currentRefresh) {
+      const currentHash = hashToken(currentRefresh);
+      user.sessions = user.sessions.filter(
+        (s) => s.hash === currentHash || s.prevHash === currentHash
+      );
+    } else if (user.sessions?.length > 1) {
+      user.sessions = user.sessions.slice(-1);
+    }
+    user.refreshTokenHash = null;
+    user.refreshTokenFamily = null;
 
     // ── Update vault keys (previousKeys are no longer stored) ────────────────
     user.vault.salt = salt;
