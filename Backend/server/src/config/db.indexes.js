@@ -10,16 +10,27 @@ export const ensureIndexes = async () => {
   try {
     // ─── Document Collection Indexes ─────────────────────────────────────────
 
+    const safeCreateIndex = async (collection, spec, options) => {
+      try {
+        await collection.createIndex(spec, options);
+      } catch (err) {
+        // If index already exists with default or different name, ignore
+        if (err.codeName !== 'IndexKeySpecsConflict' && !err.message.includes('already exists')) {
+          console.warn(`⚠️ Index creation notice for ${JSON.stringify(spec)}:`, err.message);
+        }
+      }
+    };
+
     // 1. Compound index: user-scoped listing sorted by most recently updated
-    //    Covers: getAllDocuments (find userId, sort updatedAt -1)
-    await Document.collection.createIndex(
+    await safeCreateIndex(
+      Document.collection,
       { userId: 1, updatedAt: -1 },
       { name: 'idx_doc_userId_updatedAt', background: true }
     );
 
     // 2. Compound index: ownership lookup for single-document access/update/delete
-    //    Covers: getDocumentById, updateDocument, deleteDocument (find _id + userId)
-    await Document.collection.createIndex(
+    await safeCreateIndex(
+      Document.collection,
       { _id: 1, userId: 1 },
       { name: 'idx_doc_id_userId', background: true }
     );
@@ -33,9 +44,9 @@ export const ensureIndexes = async () => {
 
     // ─── User Collection Indexes ──────────────────────────────────────────────
 
-    // 4. Unique email index (already enforced by schema unique: true,
-    //    but explicitly named here for monitoring/management clarity)
-    await User.collection.createIndex(
+    // 4. Unique email index
+    await safeCreateIndex(
+      User.collection,
       { email: 1 },
       { name: 'idx_user_email_unique', unique: true, background: true }
     );
