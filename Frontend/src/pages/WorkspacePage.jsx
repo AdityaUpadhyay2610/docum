@@ -310,15 +310,13 @@ function WorkspaceContent() {
     }
   }, [masterKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Listen for vault:lock event
+  // Listen for vault:locked event
   useEffect(() => {
     const handleVaultLock = () => {
       dispatch(clearDecryptedContent());
     };
-    window.addEventListener('vault:lock', handleVaultLock);
     window.addEventListener('vault:locked', handleVaultLock);
     return () => {
-      window.removeEventListener('vault:lock', handleVaultLock);
       window.removeEventListener('vault:locked', handleVaultLock);
     };
   }, [dispatch]);

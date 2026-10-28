@@ -86,7 +86,7 @@ export function clearKeyCache() {
 
 // Automatically listen for lock/logout events in browser environments
 if (typeof window !== 'undefined') {
-  window.addEventListener('vault:lock', () => clearKeyCache());
+  window.addEventListener('vault:locked', () => clearKeyCache());
   window.addEventListener('auth:session-revoked', () => clearKeyCache());
   window.addEventListener('auth:logout', () => clearKeyCache());
 }

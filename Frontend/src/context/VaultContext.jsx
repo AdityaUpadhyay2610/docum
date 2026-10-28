@@ -70,8 +70,7 @@ export function VaultProvider({ children }) {
       inactivityTimerRef.current = null;
     }
     dispatch(clearDecryptedContent());
-    // Notify application and keyCache that vault is locked
-    window.dispatchEvent(new CustomEvent('vault:lock'));
+    // Notify application and keyCache that vault has locked (runs once)
     window.dispatchEvent(new CustomEvent('vault:locked'));
   }, [dispatch]);
 
@@ -171,15 +170,15 @@ export function VaultProvider({ children }) {
     };
   }, [isAuthenticated]);
 
-  // Lock vault on session revocation or explicit logout event
+  // Lock vault on session revocation, explicit logout, or lock request
   useEffect(() => {
     const handleLockEvent = () => lockVault();
     window.addEventListener('auth:session-revoked', handleLockEvent);
-    window.addEventListener('vault:lock', handleLockEvent);
+    window.addEventListener('vault:request-lock', handleLockEvent);
 
     return () => {
       window.removeEventListener('auth:session-revoked', handleLockEvent);
-      window.removeEventListener('vault:lock', handleLockEvent);
+      window.removeEventListener('vault:request-lock', handleLockEvent);
     };
   }, [lockVault]);
 

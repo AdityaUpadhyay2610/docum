@@ -52,10 +52,8 @@ export function useAutoSave(activeDoc, onDocumentUpdated, debounceMs = 600, isGu
       }
     };
 
-    window.addEventListener('vault:lock', handleVaultLock);
     window.addEventListener('vault:locked', handleVaultLock);
     return () => {
-      window.removeEventListener('vault:lock', handleVaultLock);
       window.removeEventListener('vault:locked', handleVaultLock);
     };
   }, [activeDoc?.isEncrypted]);
