@@ -286,3 +286,22 @@ test('Google linking: PASSWORD_REQUIRED_TO_LINK when matching local account', as
   assert.equal(res.status, 400);
   assert.match(res.body.fields?.credential || res.body.error, /credential/i);
 });
+
+test('Health check succeeds without Origin; other requests without Origin return 403 in production', async () => {
+  // 1. Health check must succeed without Origin header
+  const healthRes = await request(app).get('/api/health');
+  assert.equal(healthRes.status, 200);
+  assert.equal(healthRes.body.status, 'ok');
+
+  // 2. In production mode, request to API without Origin must return 403 instead of 500
+  const origEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+  try {
+    const apiRes = await request(app).get('/api/documents');
+    assert.equal(apiRes.status, 403);
+    assert.match(apiRes.body.error, /Forbidden|Origin|Direct API access/i);
+  } finally {
+    process.env.NODE_ENV = origEnv;
+  }
+});
+

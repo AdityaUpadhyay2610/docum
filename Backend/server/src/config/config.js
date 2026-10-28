@@ -47,7 +47,9 @@ function optional(key, fallback = '') {
 const config = {
   // ── Server ──────────────────────────────────────────────────────────────────
   port: parseInt(optional('PORT', '3000'), 10),
-  nodeEnv: optional('NODE_ENV', 'development'),
+  get nodeEnv() {
+    return optional('NODE_ENV', 'development');
+  },
   get isProd() {
     return this.nodeEnv === 'production';
   },

@@ -45,46 +45,8 @@ app.use(
 // ── 2. Cookie parser (needed before any route reads cookies) ───────────────────
 app.use(cookieParser());
 
-// ── 3. CORS – strict whitelist ─────────────────────────────────────────────────
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // In production: DENY requests with no origin (Postman, curl, server-to-server)
-      // In development: allow no-origin for easier local testing
-      if (!origin) {
-        if (config.isProd) {
-          return callback(new Error('Direct API access is not permitted'));
-        }
-        return callback(null, true);
-      }
-
-      if (isOriginAllowed(origin)) {
-        return callback(null, true);
-      }
-      return callback(new Error(`Not allowed by CORS: ${origin}`));
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-App-Request', 'If-Match'],
-    exposedHeaders: ['ETag'],
-  })
-);
-
-// ── 4. Origin Guard – block unauthorized clients ──────────────────────────────
-// Applied to all /api/* routes; skips health check
-app.use('/api', originGuard);
-
-// ── 5. Body parsers – size-limited (10mb for document routes, 512kb for all others)
-app.use('/api/documents', express.json({ limit: '10mb' }));
-app.use('/api/documents', express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(express.json({ limit: '512kb' }));
-app.use(express.urlencoded({ extended: true, limit: '512kb' }));
-
-// ── 5.1 NoSQL Injection Protection ────────────────────────────────────────────
-app.use(mongoSanitize);
-
-// ── 6. Health Check (internal / ops use only, not behind origin guard) ─────────
-// Returns minimal info – no sensitive uptime or version data in production
+// ── 2.1 Health Check (internal / ops / Render health check – runs before CORS & origin guard)
+// Render's health checks send no Origin header; this must always succeed.
 app.get('/api/health', (req, res) => {
   if (config.isProd) {
     return res.status(200).json({ status: 'ok' });
@@ -96,7 +58,49 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ── 7. Auth routes – split rate limits ────────────────────────────────────────
+// ── 3. CORS – strict whitelist ─────────────────────────────────────────────────
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // In production: DENY requests with no origin (Postman, curl, server-to-server)
+      // In development: allow no-origin for easier local testing
+      if (!origin) {
+        if (config.isProd) {
+          const corsErr = new Error('Direct API access without an Origin header is not permitted.');
+          corsErr.status = 403;
+          return callback(corsErr);
+        }
+        return callback(null, true);
+      }
+
+      if (isOriginAllowed(origin)) {
+        return callback(null, true);
+      }
+      const corsErr = new Error(`Forbidden: Origin ${origin} is not allowed by CORS`);
+      corsErr.status = 403;
+      return callback(corsErr);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-App-Request', 'If-Match'],
+    exposedHeaders: ['ETag'],
+  })
+);
+
+// ── 4. Origin Guard – block unauthorized clients ──────────────────────────────
+// Applied to all /api/* routes
+app.use('/api', originGuard);
+
+// ── 5. Body parsers – size-limited (10mb for document routes, 512kb for all others)
+app.use('/api/documents', express.json({ limit: '10mb' }));
+app.use('/api/documents', express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '512kb' }));
+app.use(express.urlencoded({ extended: true, limit: '512kb' }));
+
+// ── 5.1 NoSQL Injection Protection ────────────────────────────────────────────
+app.use(mongoSanitize);
+
+// ── 6. Auth routes – split rate limits ────────────────────────────────────────
 // Strict routes (login / register / google / verify-email / resend-verification):
 //   10 req / 15 min – guarded additionally by the token-bucket middleware
 // Generous routes (refresh / logout / me):
@@ -106,10 +110,10 @@ app.get('/api/health', (req, res) => {
 // (so unknown sub-paths also get some protection) and rely on routes to override where needed.
 app.use('/api/auth', authRoutes);
 
-// ── 8. Document routes (general rate limit: 200 req / 15 min) ─────────────────
+// ── 7. Document routes (general rate limit: 200 req / 15 min) ─────────────────
 app.use('/api/documents', apiRateLimiter, documentRoutes);
 
-// ── 9. Vault routes (E2EE key metadata) ───────────────────────────────────────
+// ── 8. Vault routes (E2EE key metadata) ───────────────────────────────────────
 app.use('/api/vault', apiRateLimiter, vaultRoutes);
 
 // ── 9. 404 Handler ─────────────────────────────────────────────────────────────
@@ -119,8 +123,17 @@ app.use((req, res) => {
 
 // ── 10. Global Error Handler ───────────────────────────────────────────────────
 app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
-  if (err.message && (err.message.startsWith('Not allowed by CORS') || err.message.includes('CORS'))) {
-    return res.status(403).json({ error: 'Forbidden: request origin is not allowed by CORS.' });
+  if (
+    err.status === 403 ||
+    (err.message && (
+      err.message.startsWith('Not allowed by CORS') ||
+      err.message.includes('CORS') ||
+      err.message.includes('Direct API access')
+    ))
+  ) {
+    return res.status(403).json({
+      error: err.message || 'Forbidden: request origin is not allowed.',
+    });
   }
   // Suppress stack traces in production
   if (!config.isProd) {
