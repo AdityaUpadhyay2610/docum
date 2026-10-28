@@ -41,7 +41,7 @@ import {
 } from '../context/EditorSettingsContext';
 import { exportToDocx } from '../services/docxExport';
 import { printDocument } from '../services/printService';
-import { Loader2, AlertTriangle, Plus, RefreshCw, Lock } from 'lucide-react';
+import { Loader2, AlertTriangle, Plus, RefreshCw, Lock, ShieldAlert, Download } from 'lucide-react';
 
 const GUEST_STARTER_DOC = {
   _id: 'guest-starter-1',
@@ -158,6 +158,7 @@ function WorkspaceContent() {
   const isSidebarOpen = useSelector((state) => state.ui.isSidebarOpen);
   const [pageInfo, setPageInfo] = useState({ pageCount: 1, currentPage: 1 });
   const [conflictState, setConflictState] = useState(null);
+  const [conversionLoading, setConversionLoading] = useState(false);
 
   // AutoSave hook
   const { saveStatus: internalSaveStatus, queueAutoSave, saveImmediate } = useAutoSave(
@@ -426,18 +427,94 @@ function WorkspaceContent() {
     await loadDocument(id);
   };
 
-  // Update title
+  // Convert a single unencrypted document to end-to-end encryption with verification
+  const handleConvertToEncrypted = async (docToConvert = activeDoc) => {
+    if (!docToConvert) return;
+    if (!isUnlocked) {
+      openUnlockModal();
+      return;
+    }
+    setConversionLoading(true);
+    try {
+      const converted = await documentServices.convertToEncrypted(docToConvert, masterKey);
+      const docId = converted._id || converted.id;
+      dispatch(updateDocumentMeta({ id: docId, changes: converted }));
+      if ((activeDoc?._id || activeDoc?.id) === docId) {
+        dispatch(setActiveDoc(converted));
+      }
+      alert(`Document "${converted.title}" has been successfully encrypted and verified.`);
+    } catch (err) {
+      console.error('Failed to convert document:', err);
+      alert(`Conversion failed: ${err.message}`);
+    } finally {
+      setConversionLoading(false);
+    }
+  };
+
+  // Download JSON backup and convert all unencrypted documents with verification
+  const handleConvertAll = async () => {
+    if (!isUnlocked) {
+      openUnlockModal();
+      return;
+    }
+    const unencrypted = documents.filter((d) => !d.isEncrypted);
+    if (unencrypted.length === 0) {
+      alert('All documents are already encrypted.');
+      return;
+    }
+
+    if (!window.confirm(`Found ${unencrypted.length} unencrypted document(s). A JSON backup will be downloaded first, then each document will be verified before updating. Continue?`)) {
+      return;
+    }
+
+    setConversionLoading(true);
+    try {
+      // 1. Download plaintext backup before making any changes
+      const backupData = JSON.stringify(unencrypted, null, 2);
+      const blob = new Blob([backupData], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `documents-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      // 2. Convert each document with verification
+      let count = 0;
+      for (const doc of unencrypted) {
+        const converted = await documentServices.convertToEncrypted(doc, masterKey);
+        const docId = converted._id || converted.id;
+        dispatch(updateDocumentMeta({ id: docId, changes: converted }));
+        if ((activeDoc?._id || activeDoc?.id) === docId) {
+          dispatch(setActiveDoc(converted));
+        }
+        count++;
+      }
+      alert(`Successfully encrypted and verified ${count} document(s).`);
+    } catch (err) {
+      console.error('Error during bulk conversion:', err);
+      alert(`Bulk conversion halted: ${err.message}`);
+    } finally {
+      setConversionLoading(false);
+    }
+  };
+
+  // Update title (read-only if unencrypted while vault is active)
   const handleTitleChange = (newTitle) => {
     if (!activeDoc) return;
+    if (isVaultEnabled && !activeDoc.isEncrypted) return;
     const docId = activeDoc._id || activeDoc.id;
     dispatch(updateActiveDoc({ title: newTitle }));
     dispatch(updateDocumentMeta({ id: docId, changes: { title: newTitle } }));
     queueAutoSave({ title: newTitle });
   };
 
-  // Update content blocks
+  // Update content blocks (read-only if unencrypted while vault is active)
   const handleUpdateBlocks = (newBlocks) => {
     if (!activeDoc) return;
+    if (isVaultEnabled && !activeDoc.isEncrypted) return;
     dispatch(setBlocks(newBlocks));
     pushState(newBlocks);
     queueAutoSave({ content: newBlocks });
@@ -742,6 +819,38 @@ function WorkspaceContent() {
                 className="px-3 py-1 bg-amber-800 hover:bg-amber-900 text-white rounded font-semibold transition-colors cursor-pointer"
               >
                 Overwrite (force save)
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Unencrypted Document Notice Banner (Read-only mode while Vault is active) */}
+        {isVaultEnabled && activeDoc && !activeDoc.isEncrypted && (
+          <div className="bg-sky-900 text-white px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs shadow-md z-30 shrink-0">
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-sky-300 shrink-0" />
+              <span>
+                <strong>Unencrypted Document:</strong> This document was created before your vault was enabled and is <strong>read-only</strong>. Convert it to end-to-end encryption to enable editing.
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={conversionLoading}
+                onClick={() => handleConvertToEncrypted(activeDoc)}
+                className="px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded font-semibold transition-colors shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>{conversionLoading ? 'Converting...' : 'Convert to encrypted'}</span>
+              </button>
+              <button
+                type="button"
+                disabled={conversionLoading}
+                onClick={handleConvertAll}
+                className="px-3 py-1 bg-white/20 hover:bg-white/30 text-white rounded font-semibold transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Convert all</span>
               </button>
             </div>
           </div>

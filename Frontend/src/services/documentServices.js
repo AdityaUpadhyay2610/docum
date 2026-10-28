@@ -242,6 +242,67 @@ export const documentServices = {
   },
 
   /**
+   * Convert an unencrypted document to an encrypted document.
+   * Encrypts the plaintext fields, sends the update to backend,
+   * and verifies by decrypting the returned document with masterKey before returning.
+   */
+  async convertToEncrypted(doc, masterKey) {
+    const docId = doc?._id || doc?.id;
+    if (!docId) throw new Error('Valid document ID is required for conversion');
+    if (!masterKey) throw new Error('Master key is required to convert document');
+
+    // 1. Generate and wrap new DEK
+    const { dek, wrappedDek, dekIv } = await generateAndWrapDEK(masterKey);
+
+    // 2. Encrypt plaintext title, icon, and content
+    const encFields = await encryptDocument(dek, docId, {
+      title: doc.title || 'Untitled',
+      icon: doc.icon || '📝',
+      content: doc.content || [],
+    });
+
+    const payload = {
+      isEncrypted: true,
+      encTitle: encFields.encTitle,
+      encIcon: encFields.encIcon,
+      encContent: encFields.encContent,
+      encDek: { wrappedDek, dekIv },
+      coverImage: doc.coverImage,
+      revision: doc.revision ?? 0,
+    };
+
+    const headers = {};
+    if (doc.revision !== undefined && doc.revision !== null) {
+      headers['If-Match'] = `"${doc.revision}"`;
+    }
+
+    // 3. Send update to backend
+    const updatedDoc = await api.put(`/documents/${docId}`, payload, { headers });
+
+    // 4. Verification step: decrypt the returned document to ensure cipher is intact
+    const verifiedDek = await unwrapDEK(masterKey, updatedDoc.encDek.wrappedDek, updatedDoc.encDek.dekIv);
+    const decrypted = await decryptDocument(verifiedDek, docId, {
+      encTitle: updatedDoc.encTitle,
+      encIcon: updatedDoc.encIcon,
+      encContent: updatedDoc.encContent,
+    });
+
+    if (decrypted.title !== (doc.title || 'Untitled')) {
+      throw new Error(`Verification failed for document ${docId}: decrypted title did not match original`);
+    }
+
+    // 5. Store verified DEK in keyCache
+    setDEK(docId, verifiedDek);
+
+    return {
+      ...updatedDoc,
+      title: decrypted.title,
+      icon: decrypted.icon,
+      content: decrypted.content,
+    };
+  },
+
+  /**
    * Delete a document by ID
    */
   async delete(id) {

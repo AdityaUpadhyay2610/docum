@@ -633,5 +633,43 @@ describe('keyCache in-memory DEK storage', () => {
   });
 });
 
+describe('Document conversion and verification', () => {
+  it('encrypts plaintext document and verifies roundtrip decryption', async () => {
+    const masterKey = await generateMasterKey();
+    const docId = 'convert-test-id-12345';
+    const plainDoc = {
+      _id: docId,
+      title: 'Legacy Document',
+      icon: '📝',
+      content: [{ type: 'paragraph', text: 'Sensitive legacy text' }],
+    };
+
+    // 1. Wrap new DEK
+    const { dek, wrappedDek, dekIv } = await generateAndWrapDEK(masterKey);
+
+    // 2. Encrypt sensitive fields
+    const encFields = await encryptDocument(dek, docId, {
+      title: plainDoc.title,
+      icon: plainDoc.icon,
+      content: plainDoc.content,
+    });
+
+    expect(encFields.encTitle).toBeDefined();
+    expect(encFields.encContent).toBeDefined();
+
+    // 3. Verification step
+    const verifiedDek = await unwrapDEK(masterKey, wrappedDek, dekIv);
+    const decrypted = await decryptDocument(verifiedDek, docId, {
+      encTitle: encFields.encTitle,
+      encIcon: encFields.encIcon,
+      encContent: encFields.encContent,
+    });
+
+    expect(decrypted.title).toBe(plainDoc.title);
+    expect(decrypted.icon).toBe(plainDoc.icon);
+    expect(decrypted.content).toEqual(plainDoc.content);
+  });
+});
+
 
 
