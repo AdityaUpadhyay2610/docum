@@ -6,17 +6,32 @@ import {
   AlertCircle,
   Loader2,
   ShieldCheck,
+  KeyRound,
 } from 'lucide-react';
 import { useVault } from '../../context/VaultContext.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
+import RecoveryKeyModal from './RecoveryKeyModal.jsx';
 
 export default function VaultUnlockModal({ isOpen, onClose }) {
-  const { unlockVault, unlockWithRecovery } = useVault();
+  const { unlockVault, resetPassphraseWithRecovery, scorePassphrase, validatePassphrase } = useVault();
+  const { user } = useAuth();
 
   const [activeTab, setActiveTab] = useState('passphrase'); // 'passphrase' | 'recovery'
   const [passphrase, setPassphrase] = useState('');
+
+  // Recovery flow fields
   const [recoveryKey, setRecoveryKey] = useState('');
+  const [newPassphrase, setNewPassphrase] = useState('');
+  const [confirmNewPassphrase, setConfirmNewPassphrase] = useState('');
+  const [accountPassword, setAccountPassword] = useState('');
+  const [googleIdToken, setGoogleIdToken] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // New recovery key display modal after successful reset
+  const [newRecoveryKey, setNewRecoveryKey] = useState(null);
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
 
   if (!isOpen) return null;
 
@@ -39,14 +54,53 @@ export default function VaultUnlockModal({ isOpen, onClose }) {
   const handleUnlockRecovery = async (e) => {
     e.preventDefault();
     setError(null);
+
+    // Validate recovery key
+    const cleanRecov = recoveryKey.trim();
+    if (!cleanRecov) {
+      setError('Please enter your recovery key.');
+      return;
+    }
+
+    // Validate new passphrase
+    const validation = validatePassphrase(newPassphrase);
+    if (!validation.valid) {
+      setError(validation.reason);
+      return;
+    }
+
+    if (newPassphrase !== confirmNewPassphrase) {
+      setError('New passphrases do not match.');
+      return;
+    }
+
+    // Check account authentication
+    const isGoogle = user?.authProvider === 'google';
+    if (!isGoogle && !accountPassword) {
+      setError('Please enter your account login password to confirm your identity.');
+      return;
+    }
+    if (isGoogle && !googleIdToken) {
+      setError('Please confirm your identity with a fresh Google sign-in.');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      await unlockWithRecovery(recoveryKey.trim());
-      onClose();
+      const { recoveryKey: newGeneratedKey } = await resetPassphraseWithRecovery({
+        recoveryKey: cleanRecov,
+        newPassphrase,
+        password: accountPassword,
+        googleIdToken,
+      });
+
+      // Show the newly generated recovery key to the user
+      setNewRecoveryKey(newGeneratedKey);
+      setShowRecoveryModal(true);
     } catch (err) {
       console.error('Vault recovery unlock failed:', err);
-      setError('Invalid recovery key. Please check the code and try again.');
+      setError(err.message || 'Recovery failed. Please check your recovery key and password.');
     } finally {
       setLoading(false);
     }
@@ -167,9 +221,9 @@ export default function VaultUnlockModal({ isOpen, onClose }) {
               </div>
             </form>
           ) : (
-            <form onSubmit={handleUnlockRecovery} className="space-y-4">
+            <form onSubmit={handleUnlockRecovery} className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-neutral-700 mb-1.5">
+                <label className="block text-xs font-semibold text-neutral-700 mb-1">
                   Recovery Key
                 </label>
                 <textarea
@@ -178,20 +232,71 @@ export default function VaultUnlockModal({ isOpen, onClose }) {
                   placeholder="XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX-..."
                   required
                   autoFocus
-                  rows={3}
-                  className="w-full p-3 font-mono text-xs border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition resize-none"
+                  rows={2}
+                  className="w-full p-2.5 font-mono text-xs border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition resize-none"
                 />
-                <p className="text-[11px] text-neutral-500 mt-1">
-                  Enter the 64-character hex recovery key provided during setup.
+                <p className="text-[11px] text-neutral-500">
+                  Enter your current 64-character recovery key.
                 </p>
               </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-700 mb-1">
+                  Choose New Vault Passphrase
+                </label>
+                <input
+                  type="password"
+                  value={newPassphrase}
+                  onChange={(e) => setNewPassphrase(e.target.value)}
+                  placeholder="New passphrase (min 12 chars)"
+                  required
+                  className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-700 mb-1">
+                  Confirm New Vault Passphrase
+                </label>
+                <input
+                  type="password"
+                  value={confirmNewPassphrase}
+                  onChange={(e) => setConfirmNewPassphrase(e.target.value)}
+                  placeholder="Re-enter new passphrase"
+                  required
+                  className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
+                />
+              </div>
+
+              {user?.authProvider !== 'google' ? (
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1">
+                    Account Login Password
+                  </label>
+                  <input
+                    type="password"
+                    value={accountPassword}
+                    onChange={(e) => setAccountPassword(e.target.value)}
+                    placeholder="Enter your account password"
+                    required
+                    className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
+                  />
+                  <p className="text-[11px] text-neutral-500 mt-0.5">
+                    Required by server to verify your account identity.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-xl text-xs text-neutral-600">
+                  Google accounts require Google sign-in re-authentication.
+                </div>
+              )}
 
               <div className="pt-2">
                 <button
                   type="submit"
-                  disabled={loading || !recoveryKey.trim()}
+                  disabled={loading || !recoveryKey.trim() || !newPassphrase}
                   className={`w-full py-2.5 px-4 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${
-                    loading || !recoveryKey.trim()
+                    loading || !recoveryKey.trim() || !newPassphrase
                       ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
                       : 'bg-neutral-900 text-white hover:bg-neutral-800 shadow-md'
                   }`}
@@ -199,12 +304,12 @@ export default function VaultUnlockModal({ isOpen, onClose }) {
                   {loading ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Recovering Vault...
+                      Resetting Passphrase...
                     </>
                   ) : (
                     <>
                       <ShieldCheck className="w-4 h-4" />
-                      Unlock with Recovery Key
+                      Reset Passphrase & Unlock
                     </>
                   )}
                 </button>
@@ -213,6 +318,16 @@ export default function VaultUnlockModal({ isOpen, onClose }) {
           )}
         </div>
       </div>
+
+      {/* Show the new recovery key to the user after reset */}
+      <RecoveryKeyModal
+        isOpen={showRecoveryModal}
+        onClose={() => {
+          setShowRecoveryModal(false);
+          onClose();
+        }}
+        recoveryKey={newRecoveryKey}
+      />
     </div>
   );
 }

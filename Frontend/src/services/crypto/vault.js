@@ -273,7 +273,7 @@ export async function changePassphrase(oldPassphrase, newPassphrase, vaultMeta, 
  * @param {VaultMeta}         vaultMeta
  * @returns {Promise<CryptoKey>} Extractable Master Key
  */
-export async function recoverWithKey(recoveryKeyInput, vaultMeta) {
+export async function recoverWithKey(recoveryKeyInput, vaultMeta, { extractable = false } = {}) {
   const recovBytes = typeof recoveryKeyInput === 'string'
     ? parseRecoveryKey(recoveryKeyInput)
     : recoveryKeyInput;
@@ -286,7 +286,7 @@ export async function recoverWithKey(recoveryKeyInput, vaultMeta) {
     wrappedBytes,
     iv,
     recovKey,
-    true, // extractable
+    extractable,
     ['wrapKey', 'unwrapKey', 'encrypt', 'decrypt'],
   );
 
@@ -316,7 +316,7 @@ export async function recoverWithKey(recoveryKeyInput, vaultMeta) {
  * }>}
  */
 export async function resetPassphraseWithRecovery(recoveryKeyBytes, newPassphrase, vaultMeta) {
-  const masterKeyExtractable = await recoverWithKey(recoveryKeyBytes, vaultMeta);
+  const masterKeyExtractable = await recoverWithKey(recoveryKeyBytes, vaultMeta, { extractable: true });
   const masterRawBytes = await exportKeyRaw(masterKeyExtractable);
 
   // New salt + KEK

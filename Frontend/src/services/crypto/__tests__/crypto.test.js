@@ -554,6 +554,17 @@ describe('resetPassphraseWithRecovery flow', () => {
     };
     const unlockedMK = await unlockVault(FRESH_PASS, updatedMeta);
     expect(unlockedMK).toBeDefined();
+
+    // Verify master key is non-extractable in memory
+    expect(resetResult.masterKey.extractable).toBe(false);
+
+    // Verify old recovery key NO LONGER works
+    await expect(recoverWithKey(initialRecovBytes, updatedMeta)).rejects.toThrow();
+
+    // Verify NEW recovery key successfully recovers vault
+    const recoveredWithNew = await recoverWithKey(resetResult.newRecoveryBytes, updatedMeta);
+    expect(recoveredWithNew).toBeDefined();
+    expect(recoveredWithNew.extractable).toBe(false);
   });
 });
 
