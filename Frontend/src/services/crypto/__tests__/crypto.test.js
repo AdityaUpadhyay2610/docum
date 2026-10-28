@@ -623,6 +623,14 @@ describe('keyCache in-memory DEK storage', () => {
     }
     expect(getDEK('doc-locked-test')).toBeNull();
   });
+
+  it('purges in-memory keys on auth:logout and session-revoked', () => {
+    setDEK('doc-logout-test', { id: 888 });
+    expect(getDEK('doc-logout-test')).toBeDefined();
+
+    clearKeyCache();
+    expect(getDEK('doc-logout-test')).toBeNull();
+  });
 });
 
 

@@ -112,14 +112,14 @@ export function AuthProvider({ children }) {
     initSession();
 
     // ── Global event: api.js fires this when a refresh fails ─────────────────
-    // This is the ONLY path that forces a logout due to token issues.
-    // It distinguishes credential mismatch / revoked session from normal expiry.
     const handleSessionRevoked = (e) => {
       const reason = e.detail?.reason ?? 'UNKNOWN';
       console.warn('[AuthContext] Session revoked:', reason);
       clearAuthTokens();
       setUser(null);
       setIsGuest(false);
+      window.dispatchEvent(new CustomEvent('vault:request-lock'));
+      window.dispatchEvent(new CustomEvent('auth:logout'));
     };
 
     window.addEventListener('auth:session-revoked', handleSessionRevoked);
@@ -190,6 +190,9 @@ export function AuthProvider({ children }) {
     clearAuthTokens();
     setUser(null);
     setIsGuest(false);
+    window.dispatchEvent(new CustomEvent('vault:request-lock'));
+    window.dispatchEvent(new CustomEvent('auth:logout'));
+    window.dispatchEvent(new CustomEvent('auth:session-revoked', { detail: { reason: 'LOGOUT' } }));
   }, []);
 
   const openRegisterModal  = useCallback(() => setIsRegisterModalOpen(true),  []);
