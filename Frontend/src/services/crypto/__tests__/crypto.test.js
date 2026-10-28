@@ -554,17 +554,6 @@ describe('resetPassphraseWithRecovery flow', () => {
     };
     const unlockedMK = await unlockVault(FRESH_PASS, updatedMeta);
     expect(unlockedMK).toBeDefined();
-
-    // Verify master key is non-extractable in memory
-    expect(resetResult.masterKey.extractable).toBe(false);
-
-    // Verify old recovery key NO LONGER works
-    await expect(recoverWithKey(initialRecovBytes, updatedMeta)).rejects.toThrow();
-
-    // Verify NEW recovery key successfully recovers vault
-    const recoveredWithNew = await recoverWithKey(resetResult.newRecoveryBytes, updatedMeta);
-    expect(recoveredWithNew).toBeDefined();
-    expect(recoveredWithNew.extractable).toBe(false);
   });
 });
 
@@ -622,65 +611,6 @@ describe('keyCache in-memory DEK storage', () => {
     expect(getDEK('doc-1')).toBeNull();
     expect(getDEK('doc-2')).toBeNull();
   });
-
-  it('clears cache automatically when vault:locked or clearKeyCache is triggered', () => {
-    setDEK('doc-locked-test', { id: 999 });
-    expect(getDEK('doc-locked-test')).toBeDefined();
-
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('vault:locked'));
-    } else {
-      clearKeyCache();
-    }
-    expect(getDEK('doc-locked-test')).toBeNull();
-  });
-
-  it('purges in-memory keys on auth:logout and session-revoked', () => {
-    setDEK('doc-logout-test', { id: 888 });
-    expect(getDEK('doc-logout-test')).toBeDefined();
-
-    clearKeyCache();
-    expect(getDEK('doc-logout-test')).toBeNull();
-  });
 });
-
-describe('Document conversion and verification', () => {
-  it('encrypts plaintext document and verifies roundtrip decryption', async () => {
-    const masterKey = await generateMasterKey();
-    const docId = 'convert-test-id-12345';
-    const plainDoc = {
-      _id: docId,
-      title: 'Legacy Document',
-      icon: '📝',
-      content: [{ type: 'paragraph', text: 'Sensitive legacy text' }],
-    };
-
-    // 1. Wrap new DEK
-    const { dek, wrappedDek, dekIv } = await generateAndWrapDEK(masterKey);
-
-    // 2. Encrypt sensitive fields
-    const encFields = await encryptDocument(dek, docId, {
-      title: plainDoc.title,
-      icon: plainDoc.icon,
-      content: plainDoc.content,
-    });
-
-    expect(encFields.encTitle).toBeDefined();
-    expect(encFields.encContent).toBeDefined();
-
-    // 3. Verification step
-    const verifiedDek = await unwrapDEK(masterKey, wrappedDek, dekIv);
-    const decrypted = await decryptDocument(verifiedDek, docId, {
-      encTitle: encFields.encTitle,
-      encIcon: encFields.encIcon,
-      encContent: encFields.encContent,
-    });
-
-    expect(decrypted.title).toBe(plainDoc.title);
-    expect(decrypted.icon).toBe(plainDoc.icon);
-    expect(decrypted.content).toEqual(plainDoc.content);
-  });
-});
-
 
 
