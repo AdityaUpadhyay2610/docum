@@ -11,6 +11,7 @@ import {
 import { useVault } from '../../context/VaultContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import RecoveryKeyModal from './RecoveryKeyModal.jsx';
+import GoogleConfirmButton from './GoogleConfirmButton.jsx';
 
 export default function VaultUnlockModal({ isOpen, onClose }) {
   const { unlockVault, resetPassphraseWithRecovery, scorePassphrase, validatePassphrase } = useVault();
@@ -286,8 +287,20 @@ export default function VaultUnlockModal({ isOpen, onClose }) {
                   </p>
                 </div>
               ) : (
-                <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-xl text-xs text-neutral-600">
-                  Google accounts require Google sign-in re-authentication.
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1">
+                    Confirm with Google (Re-authentication)
+                  </label>
+                  <GoogleConfirmButton
+                    onTokenReceived={(token) => {
+                      setGoogleIdToken(token);
+                      setError(null);
+                    }}
+                    isConfirmed={Boolean(googleIdToken)}
+                  />
+                  <p className="text-[11px] text-neutral-500 mt-1">
+                    Sign in with Google to confirm your identity before resetting passphrase.
+                  </p>
                 </div>
               )}
 

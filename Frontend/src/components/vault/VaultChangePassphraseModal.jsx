@@ -8,15 +8,20 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { useVault } from '../../context/VaultContext.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
 import RecoveryKeyModal from './RecoveryKeyModal.jsx';
+import GoogleConfirmButton from './GoogleConfirmButton.jsx';
 
 export default function VaultChangePassphraseModal({ isOpen, onClose }) {
   const { changePassphrase, scorePassphrase, validatePassphrase } = useVault();
+  const { user } = useAuth();
+  const isGoogleUser = user?.authProvider === 'google';
 
   const [currentPassphrase, setCurrentPassphrase] = useState('');
   const [newPassphrase, setNewPassphrase] = useState('');
   const [confirmNewPassphrase, setConfirmNewPassphrase] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [googleIdToken, setGoogleIdToken] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -44,13 +49,24 @@ export default function VaultChangePassphraseModal({ isOpen, onClose }) {
       return;
     }
 
+    if (isGoogleUser && !googleIdToken) {
+      setError('Please confirm your identity with Google before updating your passphrase.');
+      return;
+    }
+
+    if (!isGoogleUser && !loginPassword) {
+      setError('Please enter your account login password to confirm your identity.');
+      return;
+    }
+
     setLoading(true);
     try {
-      const { recoveryKey } = await changePassphrase(
+      const { recoveryKey } = await changePassphrase({
         currentPassphrase,
         newPassphrase,
-        loginPassword
-      );
+        password: loginPassword,
+        googleIdToken,
+      });
       setNewRecoveryKey(recoveryKey);
       setShowRecoveryModal(true);
     } catch (err) {
@@ -175,36 +191,52 @@ export default function VaultChangePassphraseModal({ isOpen, onClose }) {
                     </div>
                   )}
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-neutral-700 mb-1">
-                  Account Login Password (Re-authentication)
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-neutral-400">
-                    <Lock className="w-4 h-4" />
+              </div>              {!isGoogleUser ? (
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1">
+                    Account Login Password (Re-authentication)
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-neutral-400">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="password"
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder="Enter your account login password"
+                      required
+                      className="w-full pl-9 pr-9 py-2 text-sm border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
+                    />
                   </div>
-                  <input
-                    type="password"
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="Enter your account login password"
-                    required
-                    className="w-full pl-9 pr-3 py-2 text-sm border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
-                  />
+                  <p className="text-[11px] text-neutral-500 mt-1">
+                    Required to verify your identity before overwriting vault metadata.
+                  </p>
                 </div>
-                <p className="text-[11px] text-neutral-500 mt-1">
-                  Required to verify your identity before overwriting vault metadata.
-                </p>
-              </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1.5">
+                    Confirm with Google (Re-authentication)
+                  </label>
+                  <GoogleConfirmButton
+                    onTokenReceived={(token) => {
+                      setGoogleIdToken(token);
+                      setError(null);
+                    }}
+                    isConfirmed={Boolean(googleIdToken)}
+                  />
+                  <p className="text-[11px] text-neutral-500 mt-1">
+                    Sign in with your Google account to confirm identity before updating passphrase.
+                  </p>
+                </div>
+              )}
 
               <div className="pt-2">
                 <button
                   type="submit"
-                  disabled={loading || score < 2 || !isMatch || !loginPassword}
+                  disabled={loading || score < 2 || !isMatch || (!isGoogleUser && !loginPassword) || (isGoogleUser && !googleIdToken)}
                   className={`w-full py-2.5 px-4 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${
-                    loading || score < 2 || !isMatch || !loginPassword
+                    loading || score < 2 || !isMatch || (!isGoogleUser && !loginPassword) || (isGoogleUser && !googleIdToken)
                       ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
                       : 'bg-neutral-900 text-white hover:bg-neutral-800 shadow-md'
                   }`}
