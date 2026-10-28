@@ -205,7 +205,7 @@ export function VaultProvider({ children }) {
   }, []);
 
   // ── Setup Vault Order: Step 2 (POST after confirmation) ────────────────────
-  const confirmVaultSetup = useCallback(async () => {
+  const confirmVaultSetup = useCallback(async (authPayload = {}) => {
     const pending = pendingVaultSetupRef.current;
     if (!pending) {
       throw new Error('No pending vault setup to confirm');
@@ -213,8 +213,10 @@ export function VaultProvider({ children }) {
 
     const { cryptoResult, recoveryString } = pending;
 
-    // Save metadata on server only AFTER recovery key confirmed
+    // Save metadata on server only AFTER recovery key confirmed, with identity verification
     await vaultServices.setupVault({
+      password:             authPayload.password,
+      googleIdToken:        authPayload.googleIdToken,
       salt:                 cryptoResult.salt,
       kdfParams:            cryptoResult.kdfParams,
       wrappedMasterKey:     cryptoResult.wrappedMasterKey,
@@ -286,7 +288,19 @@ export function VaultProvider({ children }) {
   }, [vaultMeta, checkVaultStatus]);
 
   // ── Reset Passphrase with Recovery Key ──────────────────────────────────────
-  const resetPassphraseWithRecovery = useCallback(async (recoveryString, newPassphrase) => {
+  const resetPassphraseWithRecovery = useCallback(async (recoveryStringOrOpts, maybeNewPassphrase, maybeAuth = {}) => {
+    let recoveryString = recoveryStringOrOpts;
+    let newPassphrase = maybeNewPassphrase;
+    let password = maybeAuth.password;
+    let googleIdToken = maybeAuth.googleIdToken;
+
+    if (typeof recoveryStringOrOpts === 'object' && recoveryStringOrOpts !== null) {
+      recoveryString = recoveryStringOrOpts.recoveryString || recoveryStringOrOpts.recoveryKey;
+      newPassphrase = recoveryStringOrOpts.newPassphrase;
+      password = recoveryStringOrOpts.password;
+      googleIdToken = recoveryStringOrOpts.googleIdToken;
+    }
+
     const validation = validatePassphrase(newPassphrase);
     if (!validation.valid) {
       throw new Error(validation.reason);
@@ -302,8 +316,10 @@ export function VaultProvider({ children }) {
 
     const result = await cryptoResetPassphraseWithRecovery(recoveryString, newPassphrase, currentMeta);
 
-    // Persist new wrapped keys to server
+    // Persist new wrapped keys to server with re-authentication
     await vaultServices.updateVaultMeta({
+      password,
+      googleIdToken,
       salt:                 result.salt,
       kdfParams:            result.kdfParams,
       wrappedMasterKey:     result.wrappedMasterKey,
@@ -321,7 +337,7 @@ export function VaultProvider({ children }) {
       wrappedMasterKeyIv:   result.wrappedMasterKeyIv,
       recoveryWrappedKey:   result.recoveryWrappedKey,
       recoveryWrappedKeyIv: result.recoveryWrappedKeyIv,
-      hasBackup:            true,
+      hasBackup:            false,
     });
     setLastRecoveryKey(result.newRecoveryKey);
     setIsUnlockModalOpen(false);
@@ -330,7 +346,19 @@ export function VaultProvider({ children }) {
   }, [vaultMeta, checkVaultStatus]);
 
   // ── Change Vault Passphrase ────────────────────────────────────────────────
-  const changePassphrase = useCallback(async (currentPassphrase, newPassphrase, loginPassword) => {
+  const changePassphrase = useCallback(async (currentPassphraseOrOpts, maybeNewPassphrase, maybePassword, maybeGoogleToken) => {
+    let currentPassphrase = currentPassphraseOrOpts;
+    let newPassphrase = maybeNewPassphrase;
+    let loginPassword = maybePassword;
+    let googleIdToken = maybeGoogleToken;
+
+    if (typeof currentPassphraseOrOpts === 'object' && currentPassphraseOrOpts !== null) {
+      currentPassphrase = currentPassphraseOrOpts.currentPassphrase;
+      newPassphrase = currentPassphraseOrOpts.newPassphrase;
+      loginPassword = currentPassphraseOrOpts.password;
+      googleIdToken = currentPassphraseOrOpts.googleIdToken;
+    }
+
     const validation = validatePassphrase(newPassphrase);
     if (!validation.valid) {
       throw new Error(validation.reason);
@@ -355,9 +383,10 @@ export function VaultProvider({ children }) {
       newRecoveryBytes
     );
 
-    // Persist new wrapped keys with password re-authentication on server
+    // Persist new wrapped keys with password or Google re-authentication on server
     await vaultServices.updateVaultMeta({
       password:             loginPassword,
+      googleIdToken:        googleIdToken,
       salt:                 cryptoResult.salt,
       kdfParams:            cryptoResult.kdfParams,
       wrappedMasterKey:     cryptoResult.wrappedMasterKey,
@@ -375,9 +404,10 @@ export function VaultProvider({ children }) {
       wrappedMasterKeyIv:   cryptoResult.wrappedMasterKeyIv,
       recoveryWrappedKey:   cryptoResult.recoveryWrappedKey,
       recoveryWrappedKeyIv: cryptoResult.recoveryWrappedKeyIv,
-      hasBackup:            true,
+      hasBackup:            false,
     });
     setLastRecoveryKey(newRecoveryString);
+
     setIsChangeModalOpen(false);
 
     return { recoveryKey: newRecoveryString };
