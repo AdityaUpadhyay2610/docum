@@ -13,6 +13,8 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { useVault } from '../../context/VaultContext.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
+import GoogleConfirmButton from './GoogleConfirmButton.jsx';
 
 export default function VaultSetupModal({ isOpen, onClose }) {
   const {
@@ -22,6 +24,10 @@ export default function VaultSetupModal({ isOpen, onClose }) {
     scorePassphrase,
     validatePassphrase,
   } = useVault();
+  const { user } = useAuth();
+  const isGoogle = user?.authProvider === 'google';
+  const [accountPassword, setAccountPassword] = useState('');
+  const [googleIdToken, setGoogleIdToken] = useState('');
 
   // Step 1: passphrase entry; Step 2: recovery key display and confirmation
   const [step, setStep] = useState(1);
@@ -73,6 +79,8 @@ export default function VaultSetupModal({ isOpen, onClose }) {
     setRecoveryKey('');
     setChallengeInputA('');
     setChallengeInputB('');
+    setAccountPassword('');
+    setGoogleIdToken('');
     onClose();
   };
 
@@ -153,9 +161,21 @@ export default function VaultSetupModal({ isOpen, onClose }) {
     challengeInputA.trim().toUpperCase() === groups[challengeIndices[0]] &&
     challengeInputB.trim().toUpperCase() === groups[challengeIndices[1]];
 
+  const isAuthConfirmed = isGoogle ? Boolean(googleIdToken) : Boolean(accountPassword);
+
   const handleConfirmAndActivate = async () => {
     if (!isChallengeMatched) {
       setError('The entered groups do not match the recovery key');
+      return;
+    }
+
+    if (!isGoogle && !accountPassword) {
+      setError('Please enter your account login password to verify identity');
+      return;
+    }
+
+    if (isGoogle && !googleIdToken) {
+      setError('Please confirm your identity with Google re-authentication');
       return;
     }
 
@@ -163,7 +183,10 @@ export default function VaultSetupModal({ isOpen, onClose }) {
     setError(null);
     try {
       // Step 4: POST /api/vault/setup only upon successful confirmation of recovery key
-      await confirmVaultSetup();
+      await confirmVaultSetup({
+        password: accountPassword,
+        googleIdToken,
+      });
       handleClose();
     } catch (err) {
       console.error('Vault setup confirmation failed:', err);
@@ -236,7 +259,7 @@ export default function VaultSetupModal({ isOpen, onClose }) {
                       onChange={(e) => setPassphrase(e.target.value)}
                       placeholder="Enter a strong passphrase (≥ 12 characters)"
                       required
-                      className="w-full pl-9 pr-3 py-2 text-sm border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
+                      className="w-full pl-9 pr-3 py-2 text-sm text-neutral-900 bg-white border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
                     />
                   </div>
 
@@ -245,7 +268,7 @@ export default function VaultSetupModal({ isOpen, onClose }) {
                     <div className="mt-2 space-y-1">
                       <div className="flex justify-between text-[11px] text-neutral-500">
                         <span>Strength: {label}</span>
-                        <span>{score >= 3 && passphrase.length >= 12 ? 'Meets requirement' : 'Too weak (needs score ≥ 3)'}</span>
+                        <span>{passphrase.length < 12 ? `Needs ≥ 12 characters (${passphrase.length}/12)` : score < 3 ? 'Too weak (needs score ≥ 3)' : 'Meets requirement'}</span>
                       </div>
                       <div className="h-1.5 w-full bg-neutral-200 rounded-full overflow-hidden">
                         <div
@@ -271,7 +294,7 @@ export default function VaultSetupModal({ isOpen, onClose }) {
                       onChange={(e) => setConfirmPassphrase(e.target.value)}
                       placeholder="Re-enter vault passphrase"
                       required
-                      className="w-full pl-9 pr-9 py-2 text-sm border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
+                      className="w-full pl-9 pr-9 py-2 text-sm text-neutral-900 bg-white border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
                     />
                     {isMatch && (
                       <div className="absolute inset-y-0 right-0 pr-3 flex items-center text-emerald-600">
@@ -374,7 +397,7 @@ export default function VaultSetupModal({ isOpen, onClose }) {
                       value={challengeInputA}
                       onChange={(e) => setChallengeInputA(e.target.value)}
                       placeholder="e.g. 8 chars"
-                      className="w-full px-2.5 py-1.5 text-xs font-mono uppercase border border-neutral-300 rounded-lg focus:ring-1 focus:ring-neutral-900 outline-none"
+                      className="w-full px-2.5 py-1.5 text-xs font-mono uppercase text-neutral-900 bg-white border border-neutral-300 rounded-lg focus:ring-1 focus:ring-neutral-900 outline-none"
                     />
                   </div>
                   <div>
@@ -387,10 +410,47 @@ export default function VaultSetupModal({ isOpen, onClose }) {
                       value={challengeInputB}
                       onChange={(e) => setChallengeInputB(e.target.value)}
                       placeholder="e.g. 8 chars"
-                      className="w-full px-2.5 py-1.5 text-xs font-mono uppercase border border-neutral-300 rounded-lg focus:ring-1 focus:ring-neutral-900 outline-none"
+                      className="w-full px-2.5 py-1.5 text-xs font-mono uppercase text-neutral-900 bg-white border border-neutral-300 rounded-lg focus:ring-1 focus:ring-neutral-900 outline-none"
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* Identity Verification before activation */}
+              <div className="mt-4 p-3.5 bg-neutral-50 border border-neutral-200 rounded-xl space-y-2">
+                <p className="text-xs font-semibold text-neutral-800">
+                  Step 2b: Verify identity to activate
+                </p>
+                {isGoogle ? (
+                  <div>
+                    <GoogleConfirmButton
+                      onTokenReceived={(token) => {
+                        setGoogleIdToken(token);
+                        setError(null);
+                      }}
+                      isConfirmed={Boolean(googleIdToken)}
+                    />
+                    <p className="text-[11px] text-neutral-500 mt-1 text-center">
+                      Confirm with Google to activate your encrypted vault.
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-[11px] font-medium text-neutral-600 mb-1">
+                      Account Login Password
+                    </label>
+                    <input
+                      type="password"
+                      value={accountPassword}
+                      onChange={(e) => setAccountPassword(e.target.value)}
+                      placeholder="Enter account login password"
+                      className="w-full px-2.5 py-1.5 text-xs text-neutral-900 bg-white border border-neutral-300 rounded-lg focus:ring-1 focus:ring-neutral-900 outline-none"
+                    />
+                    <p className="text-[11px] text-neutral-500 mt-1">
+                      Required by server to verify your identity.
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3 mt-5">
@@ -403,7 +463,7 @@ export default function VaultSetupModal({ isOpen, onClose }) {
                 </button>
                 <button
                   type="button"
-                  disabled={loading || !isChallengeMatched}
+                  disabled={loading || !isChallengeMatched || !isAuthConfirmed}
                   onClick={handleConfirmAndActivate}
                   className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${
                     loading || !isChallengeMatched

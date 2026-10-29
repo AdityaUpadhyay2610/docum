@@ -182,7 +182,7 @@ export default function VaultUnlockModal({ isOpen, onClose }) {
                     placeholder="Enter your vault passphrase"
                     required
                     autoFocus
-                    className="w-full pl-9 pr-3 py-2 text-sm border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
+                    className="w-full pl-9 pr-3 py-2 text-sm text-neutral-900 bg-white border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
                   />
                 </div>
               </div>
@@ -234,7 +234,7 @@ export default function VaultUnlockModal({ isOpen, onClose }) {
                   required
                   autoFocus
                   rows={2}
-                  className="w-full p-2.5 font-mono text-xs border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition resize-none"
+                  className="w-full p-2.5 font-mono text-xs text-neutral-900 bg-white border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition resize-none"
                 />
                 <p className="text-[11px] text-neutral-500">
                   Enter your current 64-character recovery key.
@@ -251,7 +251,7 @@ export default function VaultUnlockModal({ isOpen, onClose }) {
                   onChange={(e) => setNewPassphrase(e.target.value)}
                   placeholder="New passphrase (min 12 chars)"
                   required
-                  className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
+                  className="w-full px-3 py-2 text-sm text-neutral-900 bg-white border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
                 />
               </div>
 
@@ -265,7 +265,7 @@ export default function VaultUnlockModal({ isOpen, onClose }) {
                   onChange={(e) => setConfirmNewPassphrase(e.target.value)}
                   placeholder="Re-enter new passphrase"
                   required
-                  className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
+                  className="w-full px-3 py-2 text-sm text-neutral-900 bg-white border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
                 />
               </div>
 
@@ -280,7 +280,7 @@ export default function VaultUnlockModal({ isOpen, onClose }) {
                     onChange={(e) => setAccountPassword(e.target.value)}
                     placeholder="Enter your account password"
                     required
-                    className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
+                    className="w-full px-3 py-2 text-sm text-neutral-900 bg-white border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
                   />
                   <p className="text-[11px] text-neutral-500 mt-0.5">
                     Required by server to verify your account identity.

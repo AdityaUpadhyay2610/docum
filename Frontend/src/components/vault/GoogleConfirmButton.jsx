@@ -18,6 +18,7 @@ export default function GoogleConfirmButton({ onTokenReceived, isConfirmed = fal
         try {
           window.google.accounts.id.initialize({
             client_id: clientId,
+            use_fedcm_for_prompt: true,
             callback: (res) => {
               if (res.credential) {
                 onTokenReceived(res.credential);

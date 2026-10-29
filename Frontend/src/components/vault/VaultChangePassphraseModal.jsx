@@ -130,7 +130,7 @@ export default function VaultChangePassphraseModal({ isOpen, onClose }) {
                     onChange={(e) => setCurrentPassphrase(e.target.value)}
                     placeholder="Enter current vault passphrase"
                     required
-                    className="w-full pl-9 pr-3 py-2 text-sm border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
+                    className="w-full pl-9 pr-3 py-2 text-sm text-neutral-900 bg-white border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
                   />
                 </div>
               </div>
@@ -149,7 +149,7 @@ export default function VaultChangePassphraseModal({ isOpen, onClose }) {
                     onChange={(e) => setNewPassphrase(e.target.value)}
                     placeholder="Enter new passphrase (≥ 12 chars)"
                     required
-                    className="w-full pl-9 pr-3 py-2 text-sm border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
+                    className="w-full pl-9 pr-3 py-2 text-sm text-neutral-900 bg-white border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
                   />
                 </div>
 
@@ -183,7 +183,7 @@ export default function VaultChangePassphraseModal({ isOpen, onClose }) {
                     onChange={(e) => setConfirmNewPassphrase(e.target.value)}
                     placeholder="Re-enter new passphrase"
                     required
-                    className="w-full pl-9 pr-9 py-2 text-sm border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
+                    className="w-full pl-9 pr-9 py-2 text-sm text-neutral-900 bg-white border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
                   />
                   {isMatch && (
                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center text-emerald-600">
@@ -206,7 +206,7 @@ export default function VaultChangePassphraseModal({ isOpen, onClose }) {
                       onChange={(e) => setLoginPassword(e.target.value)}
                       placeholder="Enter your account login password"
                       required
-                      className="w-full pl-9 pr-9 py-2 text-sm border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
+                      className="w-full pl-9 pr-9 py-2 text-sm text-neutral-900 bg-white border border-neutral-300 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-none transition"
                     />
                   </div>
                   <p className="text-[11px] text-neutral-500 mt-1">

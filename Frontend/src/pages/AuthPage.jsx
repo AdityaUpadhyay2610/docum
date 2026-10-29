@@ -83,6 +83,7 @@ export default function AuthPage({ defaultMode = 'login' }) {
       if (window.google?.accounts?.id) {
         window.google.accounts.id.initialize({
           client_id: clientId,
+          use_fedcm_for_prompt: true,
           callback: async (response) => {
             if (response.credential) {
               setError(null);
@@ -112,7 +113,7 @@ export default function AuthPage({ defaultMode = 'login' }) {
             type: 'standard',
             shape: 'rectangular',
             text: 'continue_with',
-            width: '100%',
+            width: 380,
           });
         }
       }
