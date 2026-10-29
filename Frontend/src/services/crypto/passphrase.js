@@ -27,7 +27,7 @@ export async function loadZxcvbn() {
 }
 
 // In test environment, preload to ensure synchronous test assertions pass
-if (typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST)) {
+if (typeof globalThis !== 'undefined' && (globalThis.process?.env?.NODE_ENV === 'test' || globalThis.process?.env?.VITEST)) {
   loadZxcvbn();
 }
 
