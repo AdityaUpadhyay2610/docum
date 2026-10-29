@@ -26,11 +26,6 @@ export async function loadZxcvbn() {
   return zxcvbnPromise;
 }
 
-// In test environment, preload to ensure synchronous test assertions pass
-if (typeof globalThis !== 'undefined' && (globalThis.process?.env?.NODE_ENV === 'test' || globalThis.process?.env?.VITEST)) {
-  loadZxcvbn();
-}
-
 // ── Score ─────────────────────────────────────────────────────────────────────
 
 const LABELS = ['Very Weak', 'Weak', 'Fair', 'Strong', 'Very Strong'];

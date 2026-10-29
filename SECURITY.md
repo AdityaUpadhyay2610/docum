@@ -71,8 +71,18 @@ Document Workshops implements a **Zero-Knowledge, End-to-End Encrypted (E2EE) Va
 
 ## 🧪 Security Verification & Scope of Testing
 
-### What Was Tested
-- **Backend Test Suite (34 automated tests)**:
+Automated test suites were developed and executed during development to verify security logic, integration boundaries, and cryptographic invariants. Test files and scaffolding were subsequently removed from the repository prior to release to maintain a minimal, production-focused codebase.
+
+### What Was Tested (During Development)
+- **Frontend Cryptographic Operations**:
+  - Argon2id and PBKDF2 key derivation correctness
+  - Key wrapping/unwrapping round-trips for Master Keys and DEKs
+  - Passphrase change and recovery-key reconstruction workflows
+  - Large payload chunked base64 conversions (1MB to 5MB)
+  - In-memory `keyCache` TTL expiry, explicit deletion, and event-based purging on lock/logout
+  - Dynamic `zxcvbn` password strength evaluation and validation bounds
+  - Safe KDF bounds checking against server downgrade attacks
+- **Backend API & Security Enforcement**:
   - IDOR protection across documents (user isolation on read, update, delete)
   - Envelope bypass prevention and plaintext rejection for vault users
   - Sentinel value rejection for unencrypted documents
@@ -81,34 +91,31 @@ Document Workshops implements a **Zero-Knowledge, End-to-End Encrypted (E2EE) Va
   - Mandatory revision enforcement (`428`) and concurrent conflict detection (`409`)
   - NoSQL injection prevention (`mongoSanitize` rejecting `$` and `.`)
   - Google OAuth token audience validation and email verification checks (with mocked OAuth2Client)
-  - Server-side vault metadata persistence, previousKeys capping, and re-authentication
-- **Frontend Cryptographic Test Suite (35 automated tests)**:
-  - Argon2id and PBKDF2 key derivation correctness
-  - Key wrapping/unwrapping round-trips for Master Keys and DEKs
-  - Passphrase change and recovery-key reconstruction workflows
-  - Large payload chunked base64 conversions (1MB to 5MB)
-  - In-memory `keyCache` TTL expiry, explicit deletion, and event-based purging on lock/logout
-  - Dynamic `zxcvbn` password strength evaluation and validation bounds
-  - Safe KDF bounds checking against server downgrade attacks
+  - Server-side vault metadata persistence and re-authentication
 
-### What Was NOT Tested
-- Live external network calls to Google OAuth API endpoints (mocked via `OAuth2Client.prototype.verifyIdToken`).
-- Live SMTP mail server transport (mocked in development/test environments).
-- Multi-region database replication failover scenarios.
-- Distributed rate limiting across horizontal cluster nodes (currently uses in-memory token bucket per server process).
+### What Was Only Read / Inspected (Not Covered by Automated Test Runs)
+- **Live Google OAuth Endpoints**: Google accounts token validation was verified using mock tokens and simulated client responses; live network requests to Google OAuth servers were not executed during testing.
+- **Live Email Dispatch**: Email delivery via Nodemailer was tested with simulated transports rather than live production SMTP servers.
+- **Distributed Multi-Node Rate Limiting**: The token bucket rate limiter was tested within single-process instances; distributed Redis-backed rate limiting across horizontal clusters was reviewed by code inspection only.
+- **Database Failover**: High-availability MongoDB Atlas replica failovers were not simulated.
+- **End-to-End Browser Environment**: UI-level clipboard clearing, inactivity timer tracking, and DOM manipulation were verified manually and by code review rather than headless browser test suites (such as Cypress or Playwright).
 
 ---
 
-## ⚠️ Known Limitations & Design Boundaries
+## ⚠️ Known Limits
 
-1. **Safari / iOS Cross-Domain Cookie Restrictions (ITP)**:
+1. **Hacked Frontend Deployment**:
+   - Zero-knowledge encryption relies entirely on the client code delivered by the server or CDN. If the frontend hosting platform (e.g., Vercel) or DNS is compromised, an attacker could serve modified JavaScript that intercepts passphrases or unencrypted documents as they are handled in the browser.
+2. **Malicious Script While the Vault Is Open**:
+   - Any malicious browser extension, Cross-Site Scripting (XSS) exploit, or compromised third-party script running in the user's browser context while the vault is unlocked could access the runtime execution environment and extract decrypted documents or in-memory cryptographic keys.
+3. **Metadata Visible to the Server**:
+   - End-to-end encryption protects document titles, icons, and contents. However, the server and database administrators can still observe metadata, including user accounts, document IDs, timestamps (`createdAt`, `updatedAt`), revision numbers, ciphertext payload sizes, and user access patterns/IP addresses.
+4. **No Independent Audit**:
+   - The cryptographic protocols, envelope formats, and security mechanisms were designed and verified internally by the project team. They have not undergone formal verification or review by an independent third-party security firm.
+5. **zxcvbn Fallback Before It Loads**:
+   - To keep the initial bundle lightweight, the `zxcvbn` password evaluation library is loaded dynamically on demand. If passphrase scoring occurs before the library finishes loading, the UI uses a simplified client-side heuristic. While this heuristic enforces minimum length and character variation, it is less comprehensive than full zxcvbn dictionary matching.
+6. **Safari / iOS Cross-Domain Cookie Restrictions (ITP)**:
    - WebKit's Intelligent Tracking Prevention blocks third-party cross-site cookies. In production, frontend (`app.domain.com`) and backend (`api.domain.com`) must be hosted on subdomains of the same root domain for `HttpOnly` refresh cookies to persist.
-2. **Main-Thread KDF Computation**:
-   - Argon2id derivation runs synchronously on the main thread for ~500–800ms during initial vault unlock. On low-end mobile devices, this may cause a brief UI hesitation before keys resolve.
-3. **Zero-Knowledge Loss Scenario**:
-   - If a user loses both their master passphrase and their 64-character hexadecimal recovery key, document contents are mathematically unrecoverable. The server stores no escrow keys or backdoor recovery mechanisms.
-4. **Optimistic Concurrency (No CRDT / OT)**:
-   - Document synchronization relies on atomic revision checking (`If-Match`). Concurrent edits by multiple open tabs will trigger a 409 conflict rather than real-time character-level operational transformation.
 
 ---
 
