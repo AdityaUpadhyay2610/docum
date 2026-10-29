@@ -1,15 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, CheckCircle2 } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import config from '../../config.js';
 
 export default function GoogleConfirmButton({ onTokenReceived, isConfirmed = false }) {
   const containerRef = useRef(null);
   const [error, setError] = useState(null);
+  const clientId = config.googleClientId;
 
   useEffect(() => {
-    const clientId = config.googleClientId;
     if (!clientId) {
-      setError('Google Client ID not configured');
       return;
     }
 
@@ -50,7 +49,7 @@ export default function GoogleConfirmButton({ onTokenReceived, isConfirmed = fal
       }, 200);
       return () => clearInterval(interval);
     }
-  }, [onTokenReceived]);
+  }, [clientId, onTokenReceived]);
 
   if (isConfirmed) {
     return (
@@ -61,10 +60,12 @@ export default function GoogleConfirmButton({ onTokenReceived, isConfirmed = fal
     );
   }
 
+  const displayError = error || (!clientId ? 'Google Client ID not configured' : null);
+
   return (
     <div>
       <div ref={containerRef} className="my-1 flex justify-center" />
-      {error && <p className="text-[11px] text-red-500 mt-1">{error}</p>}
+      {displayError && <p className="text-[11px] text-red-500 mt-1">{displayError}</p>}
     </div>
   );
 }

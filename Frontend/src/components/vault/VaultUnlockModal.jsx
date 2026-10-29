@@ -6,7 +6,7 @@ import {
   AlertCircle,
   Loader2,
   ShieldCheck,
-  KeyRound,
+
 } from 'lucide-react';
 import { useVault } from '../../context/VaultContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -14,7 +14,7 @@ import RecoveryKeyModal from './RecoveryKeyModal.jsx';
 import GoogleConfirmButton from './GoogleConfirmButton.jsx';
 
 export default function VaultUnlockModal({ isOpen, onClose }) {
-  const { unlockVault, resetPassphraseWithRecovery, scorePassphrase, validatePassphrase } = useVault();
+  const { unlockVault, resetPassphraseWithRecovery, validatePassphrase } = useVault();
   const { user } = useAuth();
 
   const [activeTab, setActiveTab] = useState('passphrase'); // 'passphrase' | 'recovery'
