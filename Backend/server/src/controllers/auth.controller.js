@@ -160,6 +160,7 @@ export const register = async (req, res) => {
         email: user.email,
         avatar: user.avatar,
         isEmailVerified: user.isEmailVerified,
+        authProvider: user.authProvider || 'local',
       },
       accessToken,
       // NOTE: verificationToken is intentionally omitted from the response.
@@ -365,6 +366,7 @@ export const googleAuth = async (req, res) => {
         email: user.email,
         avatar: user.avatar,
         isEmailVerified: user.isEmailVerified,
+        authProvider: user.authProvider,
       },
       accessToken,
     });
@@ -427,6 +429,7 @@ export const login = async (req, res) => {
         email: user.email,
         avatar: user.avatar,
         isEmailVerified: user.isEmailVerified,
+        authProvider: user.authProvider || 'local',
       },
       accessToken,
     });
@@ -569,6 +572,7 @@ export const getMe = async (req, res) => {
         isEmailVerified: user.isEmailVerified,
         createdAt: user.createdAt,
         isVaultEnabled: user.vault?.isVaultEnabled || false,
+        authProvider: user.authProvider || 'local',
       },
     });
   } catch (error) {
