@@ -93,6 +93,53 @@ export function useAutoSave(activeDoc, onDocumentUpdated, debounceMs = 600, isGu
       } catch (err) {
         console.error('Failed to auto-save document:', err);
         if (err.status === 409) {
+          if (!options.isRetry) {
+            try {
+              // Option 4.1: Attempt silent auto-rebase if content has not diverged
+              const serverDoc = await documentServices.getById(docId, { masterKey });
+              if (serverDoc) {
+                const currentDoc = { ...activeDoc, ...updates };
+                const isTitleEqual = (serverDoc.title ?? '').trim() === (currentDoc.title ?? '').trim();
+                const isIconEqual = (serverDoc.icon ?? '') === (currentDoc.icon ?? '');
+                const isContentEqual = JSON.stringify(serverDoc.content ?? []) === JSON.stringify(currentDoc.content ?? []);
+
+                // Case A: Content is already identical on server — silently adopt server revision
+                if (isTitleEqual && isIconEqual && isContentEqual) {
+                  if (onDocumentUpdated) {
+                    onDocumentUpdated(serverDoc);
+                  }
+                  setSaveStatus('saved');
+                  return;
+                }
+
+                // Case B: Server content matches local baseline before `updates`
+                // (revision bumped on server from our own prior save, no external edits occurred)
+                const isBaselineTitleEqual = (serverDoc.title ?? '').trim() === (activeDoc?.title ?? '').trim();
+                const isBaselineIconEqual = (serverDoc.icon ?? '') === (activeDoc?.icon ?? '');
+                const isBaselineContentEqual = JSON.stringify(serverDoc.content ?? []) === JSON.stringify(activeDoc?.content ?? []);
+
+                if (isBaselineTitleEqual && isBaselineIconEqual && isBaselineContentEqual) {
+                  const retryUpdates = {
+                    ...updates,
+                    isEncrypted: activeDoc?.isEncrypted,
+                    encDek:      activeDoc?.encDek,
+                  };
+                  const retryUpdated = await documentServices.update(docId, retryUpdates, {
+                    masterKey,
+                    expectedRevision: serverDoc.revision,
+                  });
+                  if (onDocumentUpdated) {
+                    onDocumentUpdated(retryUpdated);
+                  }
+                  setSaveStatus('saved');
+                  return;
+                }
+              }
+            } catch (rebaseErr) {
+              console.warn('Silent conflict rebase check failed:', rebaseErr);
+            }
+          }
+
           setSaveStatus('conflict');
           window.dispatchEvent(
             new CustomEvent('document:conflict', {
