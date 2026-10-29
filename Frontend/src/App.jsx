@@ -3,9 +3,9 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { VaultProvider } from './context/VaultContext';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import { Loader2 } from 'lucide-react';
+import AuthPage from './pages/AuthPage';
 
 const WorkspacePage = lazy(() => import('./pages/WorkspacePage'));
-const AuthPage = lazy(() => import('./pages/AuthPage'));
 const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage'));
 
 function AppContent() {
