@@ -43,6 +43,10 @@ function optional(key, fallback = '') {
 }
 
 // ── Configuration Object ──────────────────────────────────────────────────────
+const rawNodeEnv = optional('NODE_ENV', 'development');
+if (!['development', 'production', 'test'].includes(rawNodeEnv)) {
+  throw new Error(`FATAL: Invalid NODE_ENV "${rawNodeEnv}". Allowed values are: development, production, test.`);
+}
 
 const config = {
   // ── Server ──────────────────────────────────────────────────────────────────
