@@ -321,7 +321,7 @@ export const updateDocument = async (req, res) => {
   } catch (error) {
     console.error('Error updating document:', error.message);
     if (error.name === 'ValidationError' || error.name === 'CastError') {
-      return res.status(400).json({ error: 'Invalid document data', details: error.message });
+      return res.status(400).json({ error: 'Invalid document data' });
     }
     return res.status(500).json({ error: 'Failed to update document' });
   }
