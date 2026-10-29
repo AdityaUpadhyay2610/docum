@@ -60,6 +60,7 @@ export {
   scorePassphrase,
   validatePassphrase,
   strengthBarProps,
+  loadZxcvbn,
 } from './passphrase.js';
 
 export {
