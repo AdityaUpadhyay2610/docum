@@ -142,6 +142,55 @@ async function deriveWithPBKDF2(passphrase, salt, params = PBKDF2_PARAMS) {
 }
 
 /**
+ * Validate that KDF parameters received from the server satisfy cryptographic safety minimums
+ * and reasonable bounds to protect against downgrade attacks and client DoS.
+ */
+export function assertSafeKdfParams(params) {
+  if (!params || typeof params !== 'object') {
+    throw new Error('Invalid KDF parameters: expected an object');
+  }
+
+  if (params.algorithm === 'argon2id') {
+    const memoryCost = Number(params.memoryCost);
+    const timeCost = Number(params.timeCost);
+    const parallelism = Number(params.parallelism || 1);
+    const outputLen = Number(params.outputLen || 32);
+
+    if (!Number.isInteger(memoryCost) || memoryCost < 16384 || memoryCost > 262144) {
+      throw new Error(`Unsafe Argon2id memoryCost: ${params.memoryCost}`);
+    }
+    if (!Number.isInteger(timeCost) || timeCost < 1 || timeCost > 10) {
+      throw new Error(`Unsafe Argon2id timeCost: ${params.timeCost}`);
+    }
+    if (!Number.isInteger(parallelism) || parallelism < 1 || parallelism > 8) {
+      throw new Error(`Unsafe Argon2id parallelism: ${params.parallelism}`);
+    }
+    if (outputLen !== 32) {
+      throw new Error(`Unsafe Argon2id outputLen: ${params.outputLen} (expected 32)`);
+    }
+    return;
+  }
+
+  if (params.algorithm === 'pbkdf2') {
+    const iterations = Number(params.iterations);
+    const outputLen = Number(params.outputLen || 32);
+
+    if (!Number.isInteger(iterations) || iterations < 100_000 || iterations > 2_000_000) {
+      throw new Error(`Unsafe PBKDF2 iterations: ${params.iterations}`);
+    }
+    if (params.hash && !['SHA-256', 'SHA-384', 'SHA-512'].includes(params.hash)) {
+      throw new Error(`Unsafe PBKDF2 hash algorithm: ${params.hash}`);
+    }
+    if (outputLen !== 32) {
+      throw new Error(`Unsafe PBKDF2 outputLen: ${params.outputLen} (expected 32)`);
+    }
+    return;
+  }
+
+  throw new Error(`Unsupported or unsafe KDF algorithm: ${params.algorithm}`);
+}
+
+/**
  * Derive the KEK (Key Encryption Key) from the vault passphrase.
  *
  * Tries Argon2id first; falls back to PBKDF2 if WASM unavailable.
@@ -154,7 +203,13 @@ async function deriveWithPBKDF2(passphrase, salt, params = PBKDF2_PARAMS) {
  * @returns {Promise<{ keyBytes: Uint8Array, algorithm: string }>}
  */
 export async function deriveKEK(passphrase, salt, kdfParams = null) {
+  if (salt.length < 16) {
+    throw new Error('Unsafe salt length: must be at least 16 bytes');
+  }
+
   if (kdfParams) {
+    assertSafeKdfParams(kdfParams);
+
     // Re-deriving from stored params (unlock / change-passphrase)
     if (kdfParams.algorithm === 'argon2id') {
       const keyBytes = await deriveWithArgon2id(passphrase, salt, kdfParams);

@@ -8,6 +8,7 @@
 export {
   // KDF
   deriveKEK,
+  assertSafeKdfParams,
   generateSalt,
   buildKdfParamRecord,
   isArgon2idAvailable,
