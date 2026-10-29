@@ -181,6 +181,10 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173) in your browser.
 
+> [!NOTE]
+> **Safari & iOS Compatibility (Production Single Custom Domain)**:  
+> Safari's Intelligent Tracking Prevention (ITP) restricts third-party cross-origin cookies between different domains (for example, `your-app.vercel.app` and `your-api.onrender.com`). For `HttpOnly` refresh cookies to persist seamlessly across sessions on Safari and iOS devices in production, configure a custom root domain for both services (e.g. `app.yourdomain.com` for the frontend and `api.yourdomain.com` for the backend).
+
 ---
 
 ## 🧪 Testing
