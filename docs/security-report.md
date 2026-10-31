@@ -1,22 +1,20 @@
-# Security Hardening & Cryptographic Audit: Assessment Report
+# Security Architecture and Cryptographic Overview
 
 **Project**: Document Workshops  
 **Date**: October 2026  
-**Auditor**: Antigravity Security Assessment  
-**Branch**: `main`  
-**Status**: Development Verification Conducted
+**Branch**: `main`
 
 ---
 
-## 1. Executive Summary
+## Summary
 
-This report documents the security architecture, threat model, and verification process conducted for the Document Workshops application. The system implements a client-side zero-knowledge encryption vault alongside defense-in-depth API security.
+This document describes the security architecture, threat model, and verification process for the Document Workshops application. The system implements a client-side zero-knowledge encryption vault alongside defense-in-depth API security.
 
-Automated unit, integration, and cryptographic test suites were written and executed during development to confirm core security behaviors, envelope validation, and access control invariants. Following verification, test files and scaffolding packages were removed to keep the deployment repository minimal.
+Automated unit, integration, and cryptographic tests were run during development to confirm core security behaviors, envelope validation, and access control invariants. Following verification, temporary test scaffolding was removed to keep the deployment repository minimal.
 
 ---
 
-## 2. Threat Model & Architectural Guarantees
+## Threat Model & Architectural Guarantees
 
 ```
                                     TRUST BOUNDARY
@@ -40,11 +38,11 @@ Automated unit, integration, and cryptographic test suites were written and exec
 
 ---
 
-## 3. Verification Details
+## Verification Details
 
-During the development cycle, automated tests were executed to validate critical backend and frontend security behaviors before test scaffolding was removed:
+During development, automated tests were executed to validate critical backend and frontend security behaviors:
 
-### Step 1: Server Security Controls (`Backend/server`)
+### Server Security Controls (`Backend/server`)
 
 | Security Control | Implementation Location | Verification Method |
 | :--- | :--- | :--- |
@@ -63,7 +61,7 @@ During the development cycle, automated tests were executed to validate critical
 | **Startup Secret Distinctness** | `src/config/config.js` | Tested startup validation for distinct secrets |
 | **Safe Error Handling** | `document.controller.js` | Tested suppression of internal error details |
 
-### Step 2: Frontend Cryptographic Controls (`Frontend/src/services/crypto`)
+### Frontend Cryptographic Controls (`Frontend/src/services/crypto`)
 
 | Cryptographic Control | Implementation Location | Verification Method |
 | :--- | :--- | :--- |
@@ -79,7 +77,7 @@ During the development cycle, automated tests were executed to validate critical
 
 ---
 
-## 4. Test Scope: What Was Tested and What Was Only Read
+## Test Scope: What Was Tested and What Was Only Read
 
 ### What Was Tested (During Development)
 - **In-Memory Cryptography**: Argon2id and PBKDF2 derivation, Master Key generation, wrapping/unwrapping DEKs, recovery key reconstruction, and keyCache lifecycle.
@@ -98,7 +96,7 @@ During the development cycle, automated tests were executed to validate critical
 
 ---
 
-## 5. Known Limits
+## Known Limits
 
 1. **Hacked Frontend Deployment**:
    - Zero-knowledge encryption relies on the integrity of the client application served to the browser. If the hosting infrastructure (such as Vercel), CDN, or domain DNS is compromised, an attacker could inject malicious scripts into the served JavaScript to intercept user passphrases or unwrap keys as they are entered.
@@ -115,6 +113,6 @@ During the development cycle, automated tests were executed to validate critical
 
 ---
 
-## 6. Conclusion
+## Notes
 
 The Document Workshops vault architecture provides zero-knowledge privacy for document contents when used within its documented operational boundaries and threat model assumptions.
