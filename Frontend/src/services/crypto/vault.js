@@ -29,7 +29,7 @@ import {
   fromBase64,
 } from './keys.js';
 
-// ── Recovery key ──────────────────────────────────────────────────────────────
+// Recovery key
 
 /** Length in bytes of the raw recovery key */
 const RECOVERY_KEY_BYTES = 32;
@@ -71,7 +71,7 @@ export function parseRecoveryKey(displayString) {
   return bytes;
 }
 
-// ── Internal: import recovery key as AES-GCM wrap key ────────────────────────
+// Internal: import recovery key as AES-GCM wrap key
 
 async function importRecoveryKey(rawBytes) {
   return crypto.subtle.importKey(
@@ -83,7 +83,7 @@ async function importRecoveryKey(rawBytes) {
   );
 }
 
-// ── Vault Setup ───────────────────────────────────────────────────────────────
+// Vault Setup
 
 /**
  * First-time vault setup.
@@ -140,7 +140,7 @@ export async function setupVault(passphrase, recoveryKeyBytes) {
   };
 }
 
-// ── Vault Unlock ──────────────────────────────────────────────────────────────
+// Vault Unlock
 
 /**
  * Unlock the vault: re-derive KEK and unwrap the Master Key.
@@ -171,7 +171,7 @@ export async function unlockVault(passphrase, vaultMeta) {
   return masterKey;
 }
 
-// ── Vault Lock ────────────────────────────────────────────────────────────────
+// Vault Lock
 
 /**
  * Lock the vault: discard the in-memory Master Key.
@@ -187,7 +187,7 @@ export function lockVault(vaultState) {
   }
 }
 
-// ── Passphrase Change ─────────────────────────────────────────────────────────
+// Passphrase Change
 
 /**
  * Change the vault passphrase.
@@ -263,7 +263,7 @@ export async function changePassphrase(oldPassphrase, newPassphrase, vaultMeta, 
   };
 }
 
-// ── Recovery ──────────────────────────────────────────────────────────────────
+// Recovery
 
 /**
  * Unlock the vault using the recovery key.

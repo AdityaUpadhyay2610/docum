@@ -18,13 +18,13 @@
  * Neither the passphrase nor any plaintext key material ever leaves the browser.
  */
 
-// ── AES-GCM parameters ────────────────────────────────────────────────────────
+// AES-GCM parameters
 
 const AES_ALGORITHM  = 'AES-GCM';
 const AES_KEY_LENGTH = 256;        // bits
 const IV_LENGTH      = 12;         // bytes (96-bit IV for AES-GCM)
 
-// ── IV generation ─────────────────────────────────────────────────────────────
+// IV generation
 
 /**
  * Generate a cryptographically random 96-bit IV.
@@ -37,7 +37,7 @@ export function generateIV() {
   return iv;
 }
 
-// ── Key import from raw bytes ─────────────────────────────────────────────────
+// Key import from raw bytes
 
 /**
  * Import raw key bytes as a CryptoKey for AES-GCM.
@@ -57,7 +57,7 @@ export async function importRawKey(keyBytes, extractable, usages) {
   );
 }
 
-// ── KEK ───────────────────────────────────────────────────────────────────────
+// KEK
 
 /**
  * Import the derived KEK bytes as a non-extractable AES-GCM wrapKey/unwrapKey.
@@ -70,7 +70,7 @@ export async function importKEK(kekBytes) {
   return importRawKey(kekBytes, false, ['wrapKey', 'unwrapKey']);
 }
 
-// ── Master Key ────────────────────────────────────────────────────────────────
+// Master Key
 
 /**
  * Generate a new random Master Key.
@@ -103,7 +103,7 @@ export async function importMasterKeyNonExtractable(rawBytes) {
   return importRawKey(rawBytes, false, ['wrapKey', 'unwrapKey']);
 }
 
-// ── Wrapping / Unwrapping ─────────────────────────────────────────────────────
+// Wrapping / Unwrapping
 
 /**
  * Wrap a CryptoKey with AES-GCM using the provided wrapper key.
@@ -154,7 +154,7 @@ export async function unwrapKey(
   );
 }
 
-// ── Document Encryption Keys (DEKs) ──────────────────────────────────────────
+// Document Encryption Keys (DEKs)
 
 /**
  * Generate a new random Document Encryption Key (DEK).
@@ -180,7 +180,7 @@ export async function importDEKForDecrypt(rawBytes) {
   return importRawKey(rawBytes, false, ['encrypt', 'decrypt']);
 }
 
-// ── Export helpers ────────────────────────────────────────────────────────────
+// Export helpers
 
 /**
  * Export a CryptoKey as raw bytes.
@@ -194,7 +194,7 @@ export async function exportKeyRaw(key) {
   return new Uint8Array(buf);
 }
 
-// ── Base64 helpers ────────────────────────────────────────────────────────────
+// Base64 helpers
 
 const CHUNK_SIZE = 8192;
 

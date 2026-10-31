@@ -15,7 +15,7 @@
  * - hash-wasm requires 'wasm-unsafe-eval' in the CSP script-src.
  */
 
-// ── Constants ──────────────────────────────────────────────────────────────────
+// Constants
 
 /** Current KDF parameter version.  Bump when cost params change. */
 export const KDF_VERSION = 1;
@@ -45,7 +45,7 @@ export const PBKDF2_PARAMS = {
   saltLen:    16,
 };
 
-// ── Salt ──────────────────────────────────────────────────────────────────────
+// Salt
 
 /**
  * Generate a cryptographically random salt.
@@ -58,7 +58,7 @@ export function generateSalt(len = 16) {
   return salt;
 }
 
-// ── Argon2id ─────────────────────────────────────────────────────────────────
+// Argon2id availability
 
 let _argon2idAvailable = null; // null = not checked yet
 
@@ -88,7 +88,7 @@ export async function isArgon2idAvailable() {
   return _argon2idAvailable;
 }
 
-// ── Core derivation ───────────────────────────────────────────────────────────
+// Core derivation
 
 /**
  * Derive a 256-bit KEK from the passphrase + salt using Argon2id.

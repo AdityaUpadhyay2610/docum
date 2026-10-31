@@ -26,7 +26,7 @@
 
 import { generateIV, wrapKey, unwrapKey, generateDEK, exportKeyRaw, importDEKForDecrypt, toBase64, fromBase64 } from './keys.js';
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// Constants
 
 /** Fixed format version string embedded in AAD.  Increment on wire-format changes. */
 export const FORMAT_VERSION = 'v1';
@@ -38,7 +38,7 @@ export const FIELDS = Object.freeze({
   CONTENT: 'content',
 });
 
-// ── AAD construction ──────────────────────────────────────────────────────────
+// AAD construction
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -55,7 +55,7 @@ export function buildAAD(documentId, fieldName) {
   return enc.encode(`${documentId}\x00${fieldName}\x00${FORMAT_VERSION}`);
 }
 
-// ── Per-field encryption ──────────────────────────────────────────────────────
+// Per-field encryption
 
 /**
  * Encrypt a single field value with AES-256-GCM.
@@ -114,7 +114,7 @@ export async function decryptField(dek, documentId, fieldName, envelope) {
   return dec.decode(plainBuf);
 }
 
-// ── Document-level helpers ────────────────────────────────────────────────────
+// Document-level helpers
 
 /**
  * Encrypt a full document's sensitive fields using its DEK.
@@ -173,7 +173,7 @@ export async function decryptDocument(dek, documentId, { encTitle, encIcon, encC
   return result;
 }
 
-// ── DEK lifecycle helpers ─────────────────────────────────────────────────────
+// DEK lifecycle helpers
 
 /**
  * Generate a new DEK, wrap it with the Master Key, and return both the

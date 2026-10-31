@@ -26,7 +26,7 @@ export async function loadZxcvbn() {
   return zxcvbnPromise;
 }
 
-// ── Score ─────────────────────────────────────────────────────────────────────
+// Score
 
 const LABELS = ['Very Weak', 'Weak', 'Fair', 'Strong', 'Very Strong'];
 
@@ -101,7 +101,7 @@ export function scorePassphrase(passphrase) {
   };
 }
 
-// ── Validation ────────────────────────────────────────────────────────────────
+// Validation
 
 /**
  * Validate a vault passphrase.
@@ -149,7 +149,7 @@ export function validatePassphrase(passphrase) {
   };
 }
 
-// ── UI Helper ─────────────────────────────────────────────────────────────────
+// UI Helper
 
 /**
  * Map a zxcvbn score (0-4) to UI presentation properties.
