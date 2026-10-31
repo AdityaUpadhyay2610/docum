@@ -7,7 +7,7 @@ import {
   getDocumentByIdPipeline,
 } from '../config/document.aggregation.js';
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// Helpers
 
 /** Validates a MongoDB ObjectId string. */
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
@@ -21,7 +21,7 @@ const getAuthUserId = (req) => {
   return id && isValidObjectId(id) ? id : null;
 };
 
-// ─── Controllers ─────────────────────────────────────────────────────────────
+// Controllers
 
 /**
  * GET /api/documents
@@ -112,7 +112,7 @@ export const createDocument = async (req, res) => {
 
     const isEncrypted = req.body.isEncrypted === true;
 
-    // Step 1b: If writing an encrypted document, reject any plaintext title/icon/content
+    // If writing an encrypted document, reject any plaintext title/icon/content
     if (isEncrypted) {
       const hasPlaintext = req.body.title !== undefined || req.body.icon !== undefined || req.body.content !== undefined;
       if (hasPlaintext) {
@@ -259,7 +259,7 @@ export const updateDocument = async (req, res) => {
 
     const isEncrypted = req.body.isEncrypted === true;
 
-    // Step 1b: Reject plaintext fields in encrypted writes
+    // Reject plaintext fields in encrypted writes
     if (isEncrypted) {
       const hasPlaintext = updates.title !== undefined || updates.icon !== undefined || updates.content !== undefined;
       if (hasPlaintext) {
@@ -294,8 +294,7 @@ export const updateDocument = async (req, res) => {
       });
     }
 
-    // Step 1b: Force plaintext sentinel values on encrypted writes
-    // This ensures migrated documents never accidentally keep real plaintext metadata.
+    // Force plaintext sentinel values on encrypted writes so migrated documents never retain real plaintext metadata.
     if (isEncrypted) {
       updates.title   = '[Encrypted]';
       updates.icon    = '🔒';

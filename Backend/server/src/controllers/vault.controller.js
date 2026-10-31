@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import User from '../models/user.models.js';
 import { verifyGoogleToken, hashToken } from './auth.controller.js';
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// Constants
 
 /**
  * Maximum age of a Google ID token used as re-auth for vault operations.
@@ -161,14 +161,8 @@ export const getVaultMeta = async (req, res) => {
 
 /**
  * PUT /api/vault/meta
- * Updates vault metadata (e.g. passphrase rotation or recovery key reset).
- *
- * Security Requirements:
- * 1. Requires login password re-authentication (for local accounts).
- * 2. For Google-only accounts (no password): requires a fresh Google ID token
- *    (issued within the last 5 minutes, same googleId) as re-authentication.
- * 3. Backs up previous wrapped keys to previousKeys array (capped at last 3, max 30 days old).
- * 4. Invariant: isVaultEnabled cannot be set back to false.
+ * Updates vault metadata during passphrase rotation or recovery key reset.
+ * Requires user re-authentication and revokes other active sessions.
  */
 export const updateVaultMeta = async (req, res) => {
   try {
@@ -199,14 +193,14 @@ export const updateVaultMeta = async (req, res) => {
       });
     }
 
-    // ── Re-authentication ────────────────────────────────────────────────────
+    // Re-authentication
     try {
       await verifyUserIdentity(user, { password, googleIdToken }, 'update vault metadata');
     } catch (authErr) {
       return res.status(authErr.status || 401).json({ error: authErr.message, code: authErr.code });
     }
 
-    // ── Revoke other sessions on vault key change ────────────────────────────
+    // Revoke other sessions on vault key change
     const currentRefresh = req.cookies?.refreshToken;
     if (currentRefresh) {
       const currentHash = hashToken(currentRefresh);
@@ -219,7 +213,7 @@ export const updateVaultMeta = async (req, res) => {
     user.refreshTokenHash = null;
     user.refreshTokenFamily = null;
 
-    // ── Update vault keys (previousKeys are no longer stored) ────────────────
+    // Update vault keys
     user.vault.salt = salt;
     user.vault.kdfParams = kdfParams;
     user.vault.wrappedMasterKey = wrappedMasterKey;

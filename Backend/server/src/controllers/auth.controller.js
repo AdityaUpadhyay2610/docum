@@ -42,7 +42,7 @@ const generateAccessToken = (user) => {
 
 /**
  * Generate a refresh token.
- * Step 1d: include the session family UUID so that on an unknown-hash event
+ * Includes the session family UUID so that on an unknown-hash event
  * we can identify and revoke only that specific session family rather than all sessions.
  */
 const generateRefreshToken = (user, family) => {
@@ -208,7 +208,7 @@ export const verifyEmail = async (req, res) => {
 };
 
 /**
- * POST /api/auth/resend-verification (Step 1f)
+ * POST /api/auth/resend-verification
  * Authenticated route. Generates a new verification token and sends it.
  * Rate-limited strictly (handled via strictAuthRateLimiter in routes).
  */
@@ -258,7 +258,7 @@ export const resendVerification = async (req, res) => {
 /**
  * POST /api/auth/google
  *
- * Step 1e: When a Google login matches an existing LOCAL account:
+ * When a Google login matches an existing local account:
  *   - Require the account's current password in the same request.
  *   - Return code PASSWORD_REQUIRED_TO_LINK if password is missing.
  *   - Require isEmailVerified.
@@ -291,7 +291,7 @@ export const googleAuth = async (req, res) => {
     if (user) {
       // If user exists by email but googleId is not yet linked:
       if (!user.googleId) {
-        // Step 1e: Enforce email verification before linking
+        // Enforce email verification before linking
         if (!user.isEmailVerified) {
           return res.status(403).json({
             error: 'Cannot link Google account: Please verify your account email address first.',
@@ -299,7 +299,7 @@ export const googleAuth = async (req, res) => {
           });
         }
 
-        // Step 1e: Require current password to prove account ownership before linking
+        // Require current password to prove account ownership before linking
         if (!password) {
           return res.status(400).json({
             error: 'Your password is required to link your Google account to this existing account.',
@@ -442,7 +442,7 @@ export const login = async (req, res) => {
 /**
  * POST /api/auth/refresh
  *
- * Step 1d: Family-based targeted revocation.
+ * Family-based targeted revocation.
  *  - The refresh JWT now contains `fam` (family UUID).
  *  - On an unknown hash: check if ANY session has the same family.
  *    • If family session found → that family was compromised → revoke ONLY that family.
@@ -478,7 +478,7 @@ export const refreshAccessToken = async (req, res) => {
 
     if (!session) {
       // Unknown hash – check if this token's family still exists in sessions
-      const tokenFamily = decoded.fam; // present in tokens issued since Step 1d
+      const tokenFamily = decoded.fam; // session family identifier
       const familySession = tokenFamily
         ? user.sessions.find((s) => s.family === tokenFamily)
         : null;
