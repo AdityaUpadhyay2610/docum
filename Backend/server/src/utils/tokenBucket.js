@@ -20,11 +20,11 @@
  * @module TokenBucket
  */
 
-// ── Bucket store ───────────────────────────────────────────────────────────────
+// Bucket store
 // Map<key, { tokens: number, lastRefill: number (ms timestamp) }>
 const store = new Map();
 
-// ── GC: remove entries that have been idle for > 30 minutes ───────────────────
+// Periodic cleanup for idle entries (> 30 minutes)
 const GC_INTERVAL_MS = 5 * 60 * 1000;       // run GC every 5 minutes
 const GC_MAX_IDLE_MS = 30 * 60 * 1000;       // evict buckets idle for 30 min
 
@@ -37,7 +37,7 @@ setInterval(() => {
   }
 }, GC_INTERVAL_MS).unref(); // .unref() so GC timer never blocks process exit
 
-// ── Core consume function ──────────────────────────────────────────────────────
+// Core consume function
 /**
  * Attempt to consume tokens from a named bucket.
  *

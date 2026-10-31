@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-// ─── Allowed value sets ───────────────────────────────────────────────────────
+// Allowed value sets
 
 const ALLOWED_BLOCK_TYPES = [
   'paragraph', 'h1', 'h2', 'h3', 'heading',
@@ -19,7 +19,7 @@ const ALLOWED_FONT_SIZES = [
   '8px', '9px', '10px', '11px', '12px', '14px', '16px', '18px', '20px', '24px', '28px', '32px', '36px', '48px', '72px'
 ];
 
-// ─── Block subdocument validator ──────────────────────────────────────────────
+// Block subdocument validator
 
 /**
  * Validates a single content block object.

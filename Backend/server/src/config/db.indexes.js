@@ -8,7 +8,7 @@ import User from '../models/user.models.js';
 
 export const ensureIndexes = async () => {
   try {
-    // ─── Document Collection Indexes ─────────────────────────────────────────
+    // Document Collection Indexes
 
     const safeCreateIndex = async (collection, spec, options) => {
       try {
@@ -42,7 +42,7 @@ export const ensureIndexes = async () => {
       // Index does not exist or already dropped, safe to ignore
     }
 
-    // ─── User Collection Indexes ──────────────────────────────────────────────
+    // User Collection Indexes
 
     // 4. Unique email index
     await safeCreateIndex(

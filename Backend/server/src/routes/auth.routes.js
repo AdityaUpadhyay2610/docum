@@ -29,7 +29,7 @@ import {
 
 const router = express.Router();
 
-// ─── Strict routes: 10 req / 15 min + token bucket ────────────────────────────
+// Strict routes: 10 req / 15 min + token bucket
 // Token bucket guard runs BEFORE validation so we reject flood attempts early,
 // before spending CPU on bcrypt or DB lookups.
 
@@ -39,7 +39,7 @@ router.post('/login',               strictAuthRateLimiter, loginTokenBucketGuard
 router.post('/google',              strictAuthRateLimiter, loginTokenBucketGuard,    googleAuthValidator,  validateRequest, googleAuth);
 router.post('/resend-verification', strictAuthRateLimiter, authMiddleware, resendVerification);
 
-// ─── Generous routes: 60 req / 15 min ─────────────────────────────────────────
+// Generous routes: 60 req / 15 min
 // These are called automatically by the frontend; strict limits would cause
 // false logouts / broken auto-refresh for users with multiple tabs open.
 

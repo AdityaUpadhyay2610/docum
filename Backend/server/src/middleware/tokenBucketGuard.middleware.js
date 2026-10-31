@@ -1,34 +1,17 @@
 /**
  * Token Bucket Auth Guard Middleware
  *
- * Applies THREE independent token bucket checks to every authentication request:
+ * Checks three independent token buckets on authentication requests:
+ * 1. Per-IP: blocks a single IP from sweeping many accounts.
+ * 2. Per-email: blocks distributed attacks targeting a single account.
+ * 3. Composite (IP + email): blocks an IP repeatedly targeting a single account.
  *
- *  ┌─────────────────────────────────────────────────────────────────────────┐
- *  │ Guard 1 · Per-IP bucket                                                 │
- *  │   Capacity : 20 tokens  |  Refill: 1 token / 3 min  (≈ 20/hr sustained)│
- *  │   Blocks a single IP from trying many different accounts (IP sweeping). │
- *  ├─────────────────────────────────────────────────────────────────────────┤
- *  │ Guard 2 · Per-email bucket                                              │
- *  │   Capacity : 5 tokens   |  Refill: 1 token / 5 min  (≈ 12/hr sustained)│
- *  │   Blocks targeting one account from many IPs (distributed attack).      │
- *  ├─────────────────────────────────────────────────────────────────────────┤
- *  │ Guard 3 · Composite (IP + email) bucket                                 │
- *  │   Capacity : 5 tokens   |  Refill: 1 token / 2 min  (≈ 30/hr sustained)│
- *  │   Tightest check: one IP repeatedly attacking one account.              │
- *  └─────────────────────────────────────────────────────────────────────────┘
- *
- * On failed login the controller calls `penaliseFailedLogin(ip, email)` to drain
- * extra tokens from all three buckets, creating progressive slowdown / lockout.
- *
- * Successful login calls `clearLoginBuckets(ip, email)` to reset state so a
- * legitimate user is never permanently locked out after changing their password.
- *
- * All three checks must PASS — rejection at any check returns 429.
+ * Failed attempts drain extra tokens; successful logins clear state.
  */
 
 import { consumeToken, drainTokens, resetBucket } from '../utils/tokenBucket.js';
 
-// ── Bucket configs ─────────────────────────────────────────────────────────────
+// Bucket configs
 
 /** Per-IP: wide net to stop one IP from sweeping many email addresses */
 const IP_CONFIG = {
@@ -51,13 +34,13 @@ const COMPOSITE_CONFIG = {
 /** Extra tokens drained on each failed login attempt (exponential burn) */
 const FAIL_DRAIN_EXTRA = 2;
 
-// ── Key builders ───────────────────────────────────────────────────────────────
+// Key builders
 
 const ipKey = (ip) => `login:ip:${ip}`;
 const emailKey = (email) => `login:email:${email ? email.toLowerCase() : '_unknown_'}`;
 const compositeKey = (ip, email) => `login:comp:${ip}:${email ? email.toLowerCase() : '_unknown_'}`;
 
-// ── Helpers exported for use in auth controller ────────────────────────────────
+// Helpers exported for use in auth controller
 
 /**
  * Drain additional tokens after a FAILED login attempt.
@@ -85,7 +68,7 @@ export function clearLoginBuckets(ip, email) {
   resetBucket(compositeKey(ip, email));
 }
 
-// ── Middleware factory ─────────────────────────────────────────────────────────
+// Middleware factory
 
 /**
  * Express middleware that runs all three token bucket guards.
@@ -96,7 +79,7 @@ export const loginTokenBucketGuard = (req, res, next) => {
   // Read email from body early – it may not be present (malformed request), that's fine
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : null;
 
-  // ── Check 1: Per-IP ─────────────────────────────────────────────────────────
+  // Check 1: Per-IP
   const ipResult = consumeToken(ipKey(ip), IP_CONFIG);
   if (!ipResult.allowed) {
     return res
@@ -109,7 +92,7 @@ export const loginTokenBucketGuard = (req, res, next) => {
       });
   }
 
-  // ── Check 2: Per-email (only if email was supplied) ─────────────────────────
+  // Check 2: Per-email (only if email was supplied)
   if (email) {
     const emailResult = consumeToken(emailKey(email), EMAIL_CONFIG);
     if (!emailResult.allowed) {
@@ -124,7 +107,7 @@ export const loginTokenBucketGuard = (req, res, next) => {
     }
   }
 
-  // ── Check 3: Composite IP + email ───────────────────────────────────────────
+  // Check 3: Composite IP + email
   if (email) {
     const compResult = consumeToken(compositeKey(ip, email), COMPOSITE_CONFIG);
     if (!compResult.allowed) {

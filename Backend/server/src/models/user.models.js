@@ -30,7 +30,7 @@ const sessionSchema = new mongoose.Schema(
 // Maximum concurrent sessions per user (one per browser/device)
 const MAX_SESSIONS = 10;
 
-// ── Vault Subdocument Schemas ─────────────────────────────────────────────────
+// Vault Subdocument Schemas
 
 const vaultBackupSchema = new mongoose.Schema(
   {
@@ -112,7 +112,7 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
-    // ── Per-device sessions ─────────────────────────────────────────────────────
+    // Per-device sessions
     // Replaces the single refreshTokenHash / refreshTokenFamily fields.
     // Each login creates a new slot; MAX_SESSIONS slots per user.
     sessions: {

@@ -29,12 +29,12 @@ import mongoSanitize from './middleware/mongoSanitize.middleware.js';
 
 const app = express();
 
-// ── Trust proxy – required when running behind Render / load-balancer ──────────
+// Trust proxy – required when running behind Render / load-balancer
 // Without this, req.ip returns the proxy address instead of the real client IP,
 // breaking rate limiting, CSRF checks, and audit logging.
 app.set('trust proxy', 1);
 
-// ── 1. Helmet – secure response headers ────────────────────────────────────────
+// 1. Helmet – secure response headers
 app.use(
   helmet({
     contentSecurityPolicy: false, // handled by the frontend SPA
@@ -42,10 +42,10 @@ app.use(
   })
 );
 
-// ── 2. Cookie parser (needed before any route reads cookies) ───────────────────
+// 2. Cookie parser
 app.use(cookieParser());
 
-// ── 2.1 Health Check (internal / ops / Render health check – runs before CORS & origin guard)
+// Health Check (internal / ops / Render health check – runs before CORS & origin guard)
 // Render's health checks send no Origin header; this must always succeed.
 app.get('/api/health', (req, res) => {
   if (config.isProd) {
@@ -58,7 +58,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ── 3. CORS – strict whitelist ─────────────────────────────────────────────────
+// 3. CORS – strict whitelist
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -87,20 +87,20 @@ app.use(
   })
 );
 
-// ── 4. Origin Guard – block unauthorized clients ──────────────────────────────
+// 4. Origin Guard – block unauthorized clients
 // Applied to all /api/* routes
 app.use('/api', originGuard);
 
-// ── 5. Body parsers – size-limited (10mb for document routes, 512kb for all others)
+// 5. Body parsers (size-limited: 10mb for documents, 512kb for others)
 app.use('/api/documents', express.json({ limit: '10mb' }));
 app.use('/api/documents', express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.json({ limit: '512kb' }));
 app.use(express.urlencoded({ extended: true, limit: '512kb' }));
 
-// ── 5.1 NoSQL Injection Protection ────────────────────────────────────────────
+// NoSQL Injection Protection
 app.use(mongoSanitize);
 
-// ── 6. Auth routes – split rate limits ────────────────────────────────────────
+// 6. Auth routes – split rate limits
 // Strict routes (login / register / google / verify-email / resend-verification):
 //   10 req / 15 min – guarded additionally by the token-bucket middleware
 // Generous routes (refresh / logout / me):
@@ -110,18 +110,18 @@ app.use(mongoSanitize);
 // (so unknown sub-paths also get some protection) and rely on routes to override where needed.
 app.use('/api/auth', authRoutes);
 
-// ── 7. Document routes (general rate limit: 200 req / 15 min) ─────────────────
+// 7. Document routes (rate limit: 200 req / 15 min)
 app.use('/api/documents', apiRateLimiter, documentRoutes);
 
-// ── 8. Vault routes (E2EE key metadata) ───────────────────────────────────────
+// 8. Vault routes (E2EE key metadata)
 app.use('/api/vault', apiRateLimiter, vaultRoutes);
 
-// ── 9. 404 Handler ─────────────────────────────────────────────────────────────
+// 9. 404 Handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-// ── 10. Global Error Handler ───────────────────────────────────────────────────
+// 10. Global Error Handler
 app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
   if (
     err.status === 403 ||

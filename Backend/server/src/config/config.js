@@ -13,7 +13,7 @@
  * module is evaluated.
  */
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// Helpers
 
 /**
  * Read a required env var. Throws a descriptive error at startup if missing.
@@ -42,14 +42,14 @@ function optional(key, fallback = '') {
   return value ? value.trim() : fallback;
 }
 
-// ── Configuration Object ──────────────────────────────────────────────────────
+// Configuration Object
 const rawNodeEnv = optional('NODE_ENV', 'development');
 if (!['development', 'production', 'test'].includes(rawNodeEnv)) {
   throw new Error(`FATAL: Invalid NODE_ENV "${rawNodeEnv}". Allowed values are: development, production, test.`);
 }
 
 const config = {
-  // ── Server ──────────────────────────────────────────────────────────────────
+  // Server
   port: parseInt(optional('PORT', '3000'), 10),
   get nodeEnv() {
     return optional('NODE_ENV', 'development');
@@ -58,10 +58,10 @@ const config = {
     return this.nodeEnv === 'production';
   },
 
-  // ── Database ─────────────────────────────────────────────────────────────────
+  // Database
   mongoUri: required('MONGO_URI'),
 
-  // ── JWT Secrets ──────────────────────────────────────────────────────────────
+  // JWT Secrets
   // IMPORTANT: Both must be long (≥32 chars), random hex strings – NEVER the same value.
   jwtAccessSecret: (() => {
     const s = required('JWT_ACCESS_SECRET');
@@ -78,7 +78,7 @@ const config = {
   jwtAccessExpiresIn:  optional('JWT_ACCESS_EXPIRES_IN',  '10m'),
   jwtRefreshExpiresIn: optional('JWT_REFRESH_EXPIRES_IN', '7d'),
 
-  // ── CORS & Client ────────────────────────────────────────────────────────────
+  // CORS & Client
   // Comma-separated list of allowed frontend origins (e.g. Vercel preview URL)
   clientUrl: (() => {
     const val = optional('CLIENT_URL', '');
@@ -88,17 +88,17 @@ const config = {
     return val;
   })(),
 
-  // ── Origin Guard shared secret ───────────────────────────────────────────────
+  // Origin Guard shared secret
   // The frontend sends this in the X-App-Request header on every request.
   // Must match VITE_APP_REQUEST_TOKEN in the frontend .env.
   appRequestToken: optional('APP_REQUEST_TOKEN', ''),
 
-  // ── Google OAuth ─────────────────────────────────────────────────────────────
+  // Google OAuth
   googleClientId: optional('GOOGLE_CLIENT_ID', ''),
   googleClientSecret: optional('GOOGLE_CLIENT_SECRET', ''),
 };
 
-// ── Cross-secret check ────────────────────────────────────────────────────────
+// Cross-secret check
 // Enforce that the two JWT secrets are distinct at startup.
 // Using the same secret for both allows refresh tokens to be used as access tokens.
 if (config.jwtAccessSecret === config.jwtRefreshSecret) {
