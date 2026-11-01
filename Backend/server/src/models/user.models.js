@@ -120,12 +120,12 @@ const userSchema = new mongoose.Schema(
       default: [],
     },
 
-    // ── Legacy single-session fields (kept for safe migration, not used by new code) ──
+    // Legacy single-session fields (kept for safe migration, not used by new code)
     // Remove these after one deploy cycle once all tokens have rotated.
     refreshTokenHash:   { type: String, default: null },
     refreshTokenFamily: { type: String, default: null },
 
-    // ── E2EE Vault Metadata ─────────────────────────────────────────────────────
+    // E2EE Vault Metadata
     vault: {
       type: vaultSchema,
       default: () => ({ isVaultEnabled: false }),
@@ -136,7 +136,7 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// ── Static helpers ──────────────────────────────────────────────────────────────
+// Static helpers
 
 /**
  * Add a new session slot for a user, evicting the oldest if MAX_SESSIONS is reached.
@@ -178,7 +178,7 @@ userSchema.statics.findSession = function (user, incomingHash) {
   return { session: null, isGrace: false };
 };
 
-// ── Serialization guard ────────────────────────────────────────────────────────
+// Serialization guard
 
 // Remove sensitive fields from serialized outputs
 userSchema.methods.toJSON = function () {

@@ -1,6 +1,6 @@
 import { body } from 'express-validator';
 
-// ─── Allowed value sets ───────────────────────────────────────────────────────
+// Allowed value sets
 
 const ALLOWED_FIELDS = new Set([
   '_id', 'title', 'icon', 'coverImage', 'content',
@@ -26,7 +26,7 @@ const COLOR_RE = /^(#([0-9a-fA-F]{3,8})|rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)|rgb
 const TEXT_ALIGNS = new Set(['left', 'center', 'right', 'justify']);
 const CALLOUT_TYPES = new Set(['info', 'warning', 'success', 'error', 'tip']);
 
-// ─── Field validators ─────────────────────────────────────────────────────────
+// Field validators
 
 /** Reject any top-level field that is not in the allowed set. */
 const documentFields = body().custom((value) => {
@@ -180,7 +180,7 @@ const encDek = body('encDek')
     return true;
   });
 
-// ─── Validator chains ─────────────────────────────────────────────────────────
+// Validator chains
 
 export const createDocumentValidator = [
   documentFields,

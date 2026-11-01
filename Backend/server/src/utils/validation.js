@@ -6,7 +6,7 @@ import {
   MAX_CT_CONTENT_LEN,
 } from '../validators/envelope.validator.js';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// Constants
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -28,7 +28,7 @@ const COLOR_RE = /^(#([0-9a-fA-F]{3,8})|rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)|rgb
 const TEXT_ALIGNS = new Set(['left', 'center', 'right', 'justify']);
 const CALLOUT_TYPES = new Set(['info', 'warning', 'success', 'error', 'tip']);
 
-// ─── Auth validation ──────────────────────────────────────────────────────────
+// Auth validation
 
 export const normalizeEmail = (email) =>
   typeof email === 'string' ? email.trim().toLowerCase() : '';
@@ -79,7 +79,7 @@ export const validateAuthInput = (
   return { errors, normalizedEmail };
 };
 
-// ─── Block validation ─────────────────────────────────────────────────────────
+// Block validation
 
 const validateBlock = (block, index) => {
   if (!block || typeof block !== 'object' || Array.isArray(block)) {
@@ -137,7 +137,7 @@ const validateBlock = (block, index) => {
   return null;
 };
 
-// ─── Document input validation ────────────────────────────────────────────────
+// Document input validation
 
 export const validateDocumentInput = (payload = {}, { partial = false } = {}) => {
   const errors = {};
@@ -154,7 +154,7 @@ export const validateDocumentInput = (payload = {}, { partial = false } = {}) =>
       }
     });
 
-    // ── Envelope shape + max-size validation ──────────────────────────────────
+    // Envelope shape + max-size validation
     // Validate encTitle
     if (!partial || payload.encTitle !== undefined) {
       const err = validateEnvelopeObject(payload.encTitle, 'encTitle', MAX_CT_TITLE_LEN);

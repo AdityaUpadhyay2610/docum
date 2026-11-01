@@ -119,13 +119,13 @@ const documentSchema = new mongoose.Schema(
       default: false,
       index: true,
     },
-    // ── Encrypted envelope fields (stored opaque in DB) ──────────────────────
+    // Encrypted envelope fields (stored opaque in DB)
     encTitle:   { type: encryptedFieldSchema, default: null },
     encIcon:    { type: encryptedFieldSchema, default: null },
     encContent: { type: encryptedFieldSchema, default: null },
     encDek:     { type: encryptedDekSchema,   default: null },
 
-    // ── Plaintext fields (used for non-vault users or placeholder metadata) ───
+    // Plaintext fields (used for non-vault users or placeholder metadata)
     title: {
       type: String,
       default: 'Untitled',
@@ -188,7 +188,7 @@ const documentSchema = new mongoose.Schema(
   }
 );
 
-// ─── Compound Indexes (also defined in db.indexes.js for explicit management) ─
+// Compound Indexes (also defined in db.indexes.js for explicit management)
 
 documentSchema.index({ userId: 1, updatedAt: -1 });
 
