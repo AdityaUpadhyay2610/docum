@@ -29,7 +29,7 @@ export default function VaultSetupModal({ isOpen, onClose }) {
   const [accountPassword, setAccountPassword] = useState('');
   const [googleIdToken, setGoogleIdToken] = useState('');
 
-  // Step 1: passphrase entry; Step 2: recovery key display and confirmation
+  // Phase 1: passphrase entry; Phase 2: recovery key display and confirmation
   const [step, setStep] = useState(1);
   const [passphrase, setPassphrase] = useState('');
   const [confirmPassphrase, setConfirmPassphrase] = useState('');
@@ -101,7 +101,7 @@ export default function VaultSetupModal({ isOpen, onClose }) {
 
     setLoading(true);
     try {
-      // Step 1 & 2: Derive keys + generate recovery key in memory WITHOUT posting to server yet
+      // Derive keys and generate recovery key in memory before posting to server
       const { recoveryKey: generatedKey } = await prepareVaultSetup(passphrase);
       setRecoveryKey(generatedKey);
 
@@ -182,7 +182,7 @@ export default function VaultSetupModal({ isOpen, onClose }) {
     setLoading(true);
     setError(null);
     try {
-      // Step 4: POST /api/vault/setup only upon successful confirmation of recovery key
+      // Commit vault setup only upon successful confirmation of recovery key
       await confirmVaultSetup({
         password: accountPassword,
         googleIdToken,
@@ -328,7 +328,7 @@ export default function VaultSetupModal({ isOpen, onClose }) {
             </>
           ) : (
             <>
-              {/* Step 2: Confirm Recovery Key */}
+              {/* Confirm Recovery Key */}
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600">
                   <Key className="w-5 h-5" />

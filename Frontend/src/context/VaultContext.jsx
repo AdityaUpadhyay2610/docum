@@ -60,7 +60,7 @@ export function VaultProvider({ children }) {
 
   const isUnlocked = Boolean(masterKey);
 
-  // ── Lock Vault ─────────────────────────────────────────────────────────────
+  // Lock Vault
   const lockVault = useCallback(() => {
     setMasterKey(null);
     clearKeyCache();
@@ -74,7 +74,7 @@ export function VaultProvider({ children }) {
     window.dispatchEvent(new CustomEvent('vault:locked'));
   }, [dispatch]);
 
-  // ── Auto-lock on inactivity ────────────────────────────────────────────────
+  // Auto-lock on inactivity
   const resetInactivityTimer = useCallback(() => {
     if (inactivityTimerRef.current) {
       clearTimeout(inactivityTimerRef.current);
@@ -105,7 +105,7 @@ export function VaultProvider({ children }) {
     };
   }, [masterKey, resetInactivityTimer]);
 
-  // ── Check Vault Status ─────────────────────────────────────────────────────
+  // Check Vault Status
   const checkVaultStatus = useCallback(async () => {
     if (!isAuthenticated) {
       setIsVaultEnabled(false);
@@ -182,7 +182,7 @@ export function VaultProvider({ children }) {
     };
   }, [lockVault]);
 
-  // ── Setup Vault Order: Step 1 (Derive & Prepare in memory) ─────────────────
+  // Prepare vault setup in memory
   const prepareVaultSetup = useCallback(async (passphrase) => {
     const validation = validatePassphrase(passphrase);
     if (!validation.valid) {
@@ -204,7 +204,7 @@ export function VaultProvider({ children }) {
     return { recoveryKey: recoveryString };
   }, []);
 
-  // ── Setup Vault Order: Step 2 (POST after confirmation) ────────────────────
+  // Commit vault setup after confirmation
   const confirmVaultSetup = useCallback(async (authPayload = {}) => {
     const pending = pendingVaultSetupRef.current;
     if (!pending) {
@@ -244,7 +244,7 @@ export function VaultProvider({ children }) {
     return { recoveryKey: recoveryString };
   }, []);
 
-  // ── Abort Vault Setup (Wipe pending keys on cancel) ─────────────────────────
+  // Abort Vault Setup (wipe pending keys on cancel)
   const abortVaultSetup = useCallback(() => {
     pendingVaultSetupRef.current = null;
   }, []);
@@ -255,7 +255,7 @@ export function VaultProvider({ children }) {
     return confirmVaultSetup();
   }, [prepareVaultSetup, confirmVaultSetup]);
 
-  // ── Unlock Vault with Passphrase ───────────────────────────────────────────
+  // Unlock Vault with Passphrase
   const unlockVault = useCallback(async (passphrase) => {
     let currentMeta = vaultMeta;
     if (!currentMeta?.wrappedMasterKey) {
@@ -271,7 +271,7 @@ export function VaultProvider({ children }) {
     return true;
   }, [vaultMeta, checkVaultStatus]);
 
-  // ── Unlock Vault with Recovery Key ─────────────────────────────────────────
+  // Unlock Vault with Recovery Key
   const unlockWithRecovery = useCallback(async (recoveryString) => {
     let currentMeta = vaultMeta;
     if (!currentMeta?.recoveryWrappedKey) {
@@ -287,7 +287,7 @@ export function VaultProvider({ children }) {
     return true;
   }, [vaultMeta, checkVaultStatus]);
 
-  // ── Reset Passphrase with Recovery Key ──────────────────────────────────────
+  // Reset Passphrase with Recovery Key
   const resetPassphraseWithRecovery = useCallback(async (recoveryStringOrOpts, maybeNewPassphrase, maybeAuth = {}) => {
     let recoveryString = recoveryStringOrOpts;
     let newPassphrase = maybeNewPassphrase;
@@ -345,7 +345,7 @@ export function VaultProvider({ children }) {
     return { recoveryKey: result.newRecoveryKey };
   }, [vaultMeta, checkVaultStatus]);
 
-  // ── Change Vault Passphrase ────────────────────────────────────────────────
+  // Change Vault Passphrase
   const changePassphrase = useCallback(async (currentPassphraseOrOpts, maybeNewPassphrase, maybePassword, maybeGoogleToken) => {
     let currentPassphrase = currentPassphraseOrOpts;
     let newPassphrase = maybeNewPassphrase;
