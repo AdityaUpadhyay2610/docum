@@ -193,7 +193,7 @@ export default function GoogleDocsToolbar({
       ref={toolbarRef}
       className="w-full bg-[#f9fbfd] border-b border-neutral-200/80 select-none shrink-0 relative z-50 overflow-visible shadow-xs"
     >
-      {/* ── Top Header Row: Google Docs Brand, Editable Title & Menu Bar ──────── */}
+      {/* Top Header Row: Google Docs Brand, Editable Title & Menu Bar */}
       <div className="px-3 sm:px-6 pt-3.5 pb-1.5 flex flex-col md:flex-row md:items-center justify-between gap-2 overflow-visible">
         {/* Left: App Icon, Document Title & Menus */}
         <div className="flex items-start gap-3.5 min-w-0 overflow-visible">
@@ -665,7 +665,7 @@ export default function GoogleDocsToolbar({
         </div>
       </div>
 
-      {/* ── Action Pill Toolbar (Exact Google Docs Style Row) ────────────────── */}
+      {/* Action Pill Toolbar (Exact Google Docs Style Row) */}
       <div className="px-3 sm:px-5 py-2 flex items-center overflow-visible">
         <div className="flex items-center gap-1 bg-[#edf2fa] hover:bg-[#e7eef8] border border-neutral-200/70 px-3 py-1.5 rounded-full shadow-2xs transition-colors shrink-0 overflow-visible relative">
           {/* 1. Search Icon */}

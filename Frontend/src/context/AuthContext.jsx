@@ -1,28 +1,8 @@
 /**
- * AuthContext – global authentication state
+ * Global authentication state and session lifecycle.
  *
- * Session lifecycle:
- *
- *  ┌──────────────┐   login / register   ┌──────────────────┐
- *  │  logged out  │ ─────────────────────▶│  authenticated   │
- *  └──────────────┘                       └──────────────────┘
- *         ▲                                       │
- *         │  auth:session-revoked event           │ access token expires
- *         │  (refresh token invalid/revoked)      │ (TOKEN_EXPIRED)
- *         │                                       ▼
- *         │                               api.js silently POSTs /auth/refresh
- *         │                               ├─ success → set new access token,
- *         │                               │            replay original request
- *         │                               │            user stays logged in ✅
- *         └───────────────────────────────┘─ failure → fires auth:session-revoked
- *                                                       AuthContext clears state
- *                                                       user sees login screen ❌
- *
- * The user is NEVER logged out due to normal access token expiry.
- * They are only logged out when:
- *   • They click "Logout"
- *   • The refresh token itself has expired (7-day idle)
- *   • The backend revokes the session (password change, logout from another tab)
+ * Users stay logged in across access token expiries via silent refresh.
+ * Sessions end only on explicit logout, refresh token expiry, or backend revocation.
  */
 
 import {
@@ -60,7 +40,7 @@ export function AuthProvider({ children }) {
 
 
 
-  // ── Session init on mount ───────────────────────────────────────────────────
+  // Session init on mount
   useEffect(() => {
     let isMounted = true;
 
@@ -111,7 +91,7 @@ export function AuthProvider({ children }) {
 
     initSession();
 
-    // ── Global event: api.js fires this when a refresh fails ─────────────────
+    // Global event: api.js fires this when a refresh fails
     const handleSessionRevoked = (e) => {
       const reason = e.detail?.reason ?? 'UNKNOWN';
       console.warn('[AuthContext] Session revoked:', reason);
@@ -134,7 +114,7 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  // ── Auth actions ────────────────────────────────────────────────────────────
+  // Auth actions
 
   const login = useCallback(async (credentials) => {
     const res = await authServices.login(credentials);
@@ -198,7 +178,7 @@ export function AuthProvider({ children }) {
   const openRegisterModal  = useCallback(() => setIsRegisterModalOpen(true),  []);
   const closeRegisterModal = useCallback(() => setIsRegisterModalOpen(false), []);
 
-  // ── isAuthenticated: true when we have BOTH a user object AND an access token
+  // isAuthenticated: true when we have BOTH a user object AND an access token
   // Using user state (not localStorage) prevents stale reads between renders.
   // The access token check uses getAccessToken() which reads localStorage —
   // this is fine because setAccessToken() is called synchronously before any

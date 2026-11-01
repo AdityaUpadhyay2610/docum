@@ -12,7 +12,7 @@
  * See: https://vitejs.dev/guide/env-and-mode.html
  */
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// Helpers
 
 /**
  * Read an optional Vite env var with a fallback.
@@ -25,23 +25,23 @@ function optional(key, fallback = '') {
   return value ? String(value).trim() : fallback;
 }
 
-// ── Configuration Object ──────────────────────────────────────────────────────
+// Configuration Object
 
 const config = {
-  // ── API ───────────────────────────────────────────────────────────────────────
+  // API
   // Base URL of the backend server (without trailing slash or /api suffix).
   // Set VITE_API_URL in .env to your backend origin.
   apiUrl: optional('VITE_API_URL', optional('VITE_API_BASE_URL', 'http://localhost:3000')),
 
-  // ── Origin Guard ──────────────────────────────────────────────────────────────
+  // Origin Guard
   // Shared secret sent in X-App-Request header on every API call.
   // Must match APP_REQUEST_TOKEN in the backend .env (production only).
   appRequestToken: optional('VITE_APP_REQUEST_TOKEN', ''),
 
-  // ── Google OAuth ─────────────────────────────────────────────────────────────
+  // Google OAuth
   googleClientId: optional('VITE_GOOGLE_CLIENT_ID', ''),
 
-  // ── Environment ───────────────────────────────────────────────────────────────
+  // Environment
   mode: import.meta.env.MODE ?? 'development',
   get isProd() {
     return this.mode === 'production';

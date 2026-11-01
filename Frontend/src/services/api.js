@@ -17,7 +17,7 @@
 
 import config from '../config.js';
 
-// ── Base URL ──────────────────────────────────────────────────────────────────
+// Base URL
 function getApiBaseUrl() {
   let url = config.apiUrl.replace(/\/+$/, '');
   url = url.replace(/\/api\/documents\/?$/, '');
@@ -28,7 +28,7 @@ function getApiBaseUrl() {
 
 export const API_BASE_URL = getApiBaseUrl();
 
-// ── Error class ───────────────────────────────────────────────────────────────
+// Error class
 export class ApiError extends Error {
   constructor(message, status, data) {
     super(message);
@@ -40,7 +40,7 @@ export class ApiError extends Error {
   }
 }
 
-// ── Token helpers ─────────────────────────────────────────────────────────────
+// Token helpers
 // Only the short-lived access token lives in localStorage.
 // The refresh token is strictly HttpOnly cookie – JS never touches it.
 try { localStorage.removeItem('refreshToken'); } catch { /* ignore */ }
@@ -57,7 +57,7 @@ export const clearAuthTokens = ()       => {
   localStorage.removeItem('isGuest');
 };
 
-// ── Shared default headers ────────────────────────────────────────────────────
+// Shared default headers
 function buildDefaultHeaders() {
   return {
     'Content-Type': 'application/json',
@@ -69,7 +69,7 @@ function buildDefaultHeaders() {
   };
 }
 
-// ── Silent refresh state machine ──────────────────────────────────────────────
+// Silent refresh state machine
 let isRefreshing      = false;
 let refreshSubscribers = [];   // queue of { resolve, reject } callbacks
 
@@ -87,7 +87,7 @@ function rejectSubscribers(err) {
   refreshSubscribers = [];
 }
 
-// ── Core refresh attempt (called once per concurrent 401 burst) ───────────────
+// Core refresh attempt (called once per concurrent 401 burst)
 async function attemptSilentRefresh() {
   const refreshUrl = `${API_BASE_URL}/auth/refresh`;
   const res = await fetch(refreshUrl, {
@@ -109,7 +109,7 @@ async function attemptSilentRefresh() {
   return data.accessToken;
 }
 
-// ── Main request function ─────────────────────────────────────────────────────
+// Main request function
 async function request(endpoint, options = {}, _isRetry = false) {
   const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
@@ -142,7 +142,7 @@ async function request(endpoint, options = {}, _isRetry = false) {
     data = await res.text();
   }
 
-  // ── Silent refresh on access-token expiry ─────────────────────────────────
+  // Silent refresh on access-token expiry
   // Only trigger for:
   //  • HTTP 401
   //  • NOT already a retry (prevents infinite loops)
@@ -157,7 +157,7 @@ async function request(endpoint, options = {}, _isRetry = false) {
 
   if (isExpiry) {
     if (!isRefreshing) {
-      // ── First concurrent request to hit 401 ── triggers the refresh
+      // First concurrent request to hit 401 triggers the refresh
       isRefreshing = true;
       try {
         const newToken = await attemptSilentRefresh();
@@ -181,7 +181,7 @@ async function request(endpoint, options = {}, _isRetry = false) {
           : new ApiError('Session expired. Please log in again.', 401, { code: 'SESSION_REVOKED' });
       }
     } else {
-      // ── Subsequent concurrent requests — wait for the in-flight refresh ──
+      // Subsequent concurrent requests — wait for the in-flight refresh
       return new Promise((resolve, reject) => {
         enqueueRequest(
           (newToken) => {
@@ -197,7 +197,7 @@ async function request(endpoint, options = {}, _isRetry = false) {
     }
   }
 
-  // ── Any other non-ok response ─────────────────────────────────────────────
+  // Any other non-ok response
   if (!res.ok) {
     // 401 that is NOT a token-expiry (wrong credentials, session revoked, etc.)
     if (res.status === 401 && !endpoint.includes('/auth/refresh')) {
@@ -213,7 +213,7 @@ async function request(endpoint, options = {}, _isRetry = false) {
   return data;
 }
 
-// ── Public API surface ────────────────────────────────────────────────────────
+// Public API surface
 export const api = {
   get:    (endpoint, options)       => request(endpoint, { ...options, method: 'GET'    }),
   post:   (endpoint, body, options) => request(endpoint, { ...options, method: 'POST',   body }),

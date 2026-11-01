@@ -3,10 +3,10 @@
  *
  * Key hierarchy:
  *
- *   Passphrase ──(Argon2id/PBKDF2)──► KEK (AES-256-GCM, in-memory only)
- *   KEK ──(AES-GCM wrap)────────────► Wrapped Master Key  (stored on server)
- *   Master Key ──(AES-GCM wrap)──────► Wrapped DEK         (stored per document)
- *   DEK ──(AES-GCM encrypt)──────────► Ciphertext          (stored per document)
+ *   Passphrase --(Argon2id/PBKDF2)--> KEK (AES-256-GCM, in-memory only)
+ *   KEK --(AES-GCM wrap)------------> Wrapped Master Key  (stored on server)
+ *   Master Key --(AES-GCM wrap)------> Wrapped DEK         (stored per document)
+ *   DEK --(AES-GCM encrypt)----------> Ciphertext          (stored per document)
  *
  * Master Key lifecycle:
  *   1. Generated as EXTRACTABLE during first-time vault setup.

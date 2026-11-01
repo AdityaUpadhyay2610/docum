@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 
 /**
- * Hook to calculate comprehensive document statistics
+ * Hook to calculate document statistics
  * @param {string} title
  * @param {Array} blocks
  */

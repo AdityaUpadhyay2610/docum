@@ -5,7 +5,7 @@ import { CodeBlock, TableBlock, BoardBlock, CalloutBlock } from './blocks';
 import { exportToDocx } from '../../services/docxExport';
 import { useEditorSettings, PAGE_SIZES, PAGE_THEMES } from '../../context/EditorSettingsContext';
 
-// ─── Constants for Automatic Page Pagination ──────────────────────────────────
+// Constants for Automatic Page Pagination
 // In standard Word / Google Docs formatting (A4/Letter, 1-inch margins, 11-12pt font):
 // 1 standard page holds approx 380 - 450 words or ~35 lines of text.
 const TARGET_WORDS_PER_PAGE = 400;
@@ -39,7 +39,7 @@ export default function EditorCanvas({
   const titleRef = useRef(null);
   const pageRef = useRef(null);
 
-  // ─── Style mapper ────────────────────────────────────────────────────────────
+  // Style mapper
   const getBlockStyle = (block) => {
     const s = block?.style || {};
     const styles = {};
@@ -63,7 +63,7 @@ export default function EditorCanvas({
     onActiveBlockChange?.(blockId);
   };
 
-  // ─── Auto resize textarea ────────────────────────────────────────────────────
+  // Auto resize textarea
   const autoResize = useCallback((el) => {
     if (!el) return;
     el.style.height = 'auto';
@@ -94,7 +94,7 @@ export default function EditorCanvas({
     return () => window.removeEventListener('resize', handleResize);
   }, [autoResize]);
 
-  // ─── Auto-initialize empty document & Auto-Focus Cursor ───────────────────────
+  // Auto-initialize empty document & Auto-Focus Cursor
   useEffect(() => {
     if (blocks.length === 0) {
       const defaultBlock = { id: crypto.randomUUID(), type: 'paragraph', text: '' };
@@ -117,7 +117,7 @@ export default function EditorCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ─── Click anywhere on blank page → focus nearest / last block ───────────────
+  // Click anywhere on blank page → focus nearest / last block
   const handlePageClick = (e, pageBlocks = []) => {
     if (
       e.target.tagName === 'INPUT' ||
@@ -153,7 +153,7 @@ export default function EditorCanvas({
     }
   };
 
-  // ─── Text change with slash detection ───────────────────────────────────────
+  // Text change with slash detection
   const handleTextChange = (id, newText, targetElement, extraProps = {}) => {
     setActiveBlockId(id);
     onActiveBlockChange?.(id);
@@ -173,7 +173,7 @@ export default function EditorCanvas({
     }
   };
 
-  // ─── Handling Chunked Text Updates for massive paragraphs ───────────────────
+  // Handling Chunked Text Updates for massive paragraphs
   const handleChunkTextChange = (parentId, chunkIndex, totalChunks, newChunkText, chunksArray) => {
     const newFullChunks = [...chunksArray];
     newFullChunks[chunkIndex] = newChunkText;
@@ -184,7 +184,7 @@ export default function EditorCanvas({
     onUpdateBlocks(updated);
   };
 
-  // ─── Slash menu block selection ──────────────────────────────────────────────
+  // Slash menu block selection
   const handleSelectBlockType = (type) => {
     if (type === 'export-docx') {
       const updated = blocks.map((block) => {
@@ -265,7 +265,7 @@ export default function EditorCanvas({
     }, 20);
   };
 
-  // ─── Seamless Keyboard Typing Navigation ────────────────────────────────────
+  // Keyboard typing navigation
   const handleKeyDown = (e, globalIndex, block) => {
     if (menuOpen) return;
 
@@ -393,10 +393,10 @@ export default function EditorCanvas({
     }
   };
 
-  // ─── Numbered list sequential counter ───────────────────────────────────────
+  // Numbered list sequential counter
   let numberedCounter = 0;
 
-  // ─── Layout config ───────────────────────────────────────────────────────────
+  // Layout config
   const themeConfig = PAGE_THEMES[pageTheme] || PAGE_THEMES.white;
 
   const sizeConfig = PAGE_SIZES[pageSize] || PAGE_SIZES.letter;
@@ -406,7 +406,7 @@ export default function EditorCanvas({
     ? `mx-auto my-2 sm:my-4 md:my-6 ${themeConfig.pageBg} ${themeConfig.border} border shadow-xl rounded-xs min-h-[1056px] w-full py-12 ${orientation === 'landscape' ? 'max-w-[1056px] min-h-[816px]' : sizeConfig.class}`
     : `mx-auto w-full max-w-[210mm] sm:max-w-3xl lg:max-w-4xl xl:max-w-5xl min-h-[calc(100vh-120px)] py-6 sm:py-10 md:py-14 px-4 sm:px-8 md:px-16 ${themeConfig.pageBg} shadow-sm border border-neutral-200/60 rounded-xs`;
 
-  // ─── Title keyboard: Tab / Enter → focus first block ────────────────────────
+  // Title keyboard: Tab / Enter → focus first block
   const handleTitleKeyDown = (e) => {
     if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
@@ -417,7 +417,7 @@ export default function EditorCanvas({
     }
   };
 
-  // ─── Helper function to estimate block size in word-equivalents ─────────────
+  // Helper function to estimate block size in word-equivalents
   const getBlockWeight = useCallback((block) => {
     if (!block) return 0;
     if (block.type === 'page-break') return 999999;
@@ -449,7 +449,7 @@ export default function EditorCanvas({
     return Math.max(words, lines * 12);
   }, []);
 
-  // ─── Automatic Page Pagination Algorithm ────────────────────────────────────
+  // Automatic Page Pagination Algorithm
   // Automatically breaks long documents (e.g. 15,000 words) across multiple A4 pages
   const pages = useMemo(() => {
     const result = [[]];
@@ -564,7 +564,7 @@ export default function EditorCanvas({
     });
   }, [pageCount, activePageIndex, onPageInfoChange]);
 
-  // ─── Render Clean Block without hover '+' or 'delete' buttons ────────────────
+  // Render Clean Block without hover '+' or 'delete' buttons
   const renderBlock = (block, localIndex, pageIdx) => {
     const globalIndex = block.globalIndex ?? localIndex;
     const targetRefId = block.refId || block.id;
@@ -874,7 +874,7 @@ export default function EditorCanvas({
                 return renderBlock(block, localIdx, pageIdx);
               })}
 
-              {/* Clickable padding at bottom of page sheet to seamlessly place cursor */}
+              {/* Clickable padding at bottom of page sheet to place cursor */}
               <div
                 className="h-24 w-full cursor-text"
                 onClick={() => {
