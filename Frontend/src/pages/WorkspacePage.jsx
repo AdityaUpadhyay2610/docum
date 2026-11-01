@@ -366,10 +366,10 @@ function WorkspaceContent() {
       return;
     }
 
-    // Step 3d: If user has vault enabled, new documents should be encrypted by default
+    // If user has vault enabled, new documents should be encrypted by default
     if (isVaultEnabled && !options.asPlaintext) {
       if (!isUnlocked) {
-        // Step 3d: If vault is locked, open the unlock modal first
+        // If vault is locked, open the unlock modal first
         openUnlockModal();
         return;
       }
@@ -796,7 +796,7 @@ function WorkspaceContent() {
 
       {/* Main Documents Workspace */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden bg-[#edebe9] min-w-0">
-        {/* Step 3b: 409 Conflict Banner */}
+        {/* 409 Conflict Banner */}
         {conflictState && (
           <div className="bg-amber-600 text-white px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs shadow-md z-30 shrink-0">
             <div className="flex items-center gap-2">
@@ -878,7 +878,7 @@ function WorkspaceContent() {
             </button>
           </div>
         ) : isEncryptedAndLocked ? (
-          /* Step 3b: Prominent Vault Locked Screen */
+          /* Vault Locked Screen */
           <div className="flex-1 flex flex-col items-center justify-center p-8 bg-neutral-100/50">
             <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-neutral-200 p-8 text-center space-y-4">
               <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto text-2xl shadow-xs">

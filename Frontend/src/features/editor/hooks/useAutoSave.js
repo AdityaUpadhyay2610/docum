@@ -39,7 +39,7 @@ export function useAutoSave(activeDoc, onDocumentUpdated, debounceMs = 600, isGu
     };
   }, []);
 
-  // Step 3a: On vault lock, cancel any pending debounced autosaves of encrypted documents immediately
+  // On vault lock, cancel any pending debounced autosaves of encrypted documents immediately
   useEffect(() => {
     const handleVaultLock = () => {
       if (activeDoc?.isEncrypted) {
@@ -95,7 +95,7 @@ export function useAutoSave(activeDoc, onDocumentUpdated, debounceMs = 600, isGu
         if (err.status === 409) {
           if (!options.isRetry) {
             try {
-              // Option 4.1: Attempt silent auto-rebase if content has not diverged
+              // Attempt silent auto-rebase if content has not diverged
               const serverDoc = await documentServices.getById(docId, { masterKey });
               if (serverDoc) {
                 const currentDoc = { ...activeDoc, ...updates };
